@@ -3,7 +3,7 @@ HAZOP Analysis Tool - Flask Backend
 Main application entry point
 """
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 import sys
 from pathlib import Path
@@ -19,7 +19,8 @@ from routes.report_routes import report_bp
 import os
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+# Enable CORS for React frontend with explicit configuration
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # Register blueprints
 app.register_blueprint(file_bp, url_prefix='/api/file')
@@ -37,6 +38,29 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def health_check():
     """Health check endpoint"""
     return {'status': 'ok', 'message': 'HAZOP Backend is running'}
+
+# Error handler to ensure CORS headers are sent even on errors
+@app.errorhandler(500)
+def handle_500_error(e):
+    response = jsonify({
+        'success': False,
+        'error': str(e) if hasattr(e, 'description') else 'Internal server error'
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response, 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    response = jsonify({
+        'success': False,
+        'error': str(e) if hasattr(e, 'description') else 'An error occurred'
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response, 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

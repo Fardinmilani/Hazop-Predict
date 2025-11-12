@@ -63,6 +63,10 @@ export const methodologyAPI = {
 
 // Ranking API
 export const rankingAPI = {
+  get: () => api.get('/ranking/get'),
+  update: (criteriaWeights, alternativesScores, rankingResult) => 
+    api.post('/ranking/update', { criteriaWeights, alternativesScores, rankingResult }),
+  delete: () => api.post('/ranking/delete'),
   ahp: (criteriaWeights, alternativesScores) => 
     api.post('/ranking/ahp', { criteriaWeights, alternativesScores }),
   pairwiseMatrix: (scores) => 
