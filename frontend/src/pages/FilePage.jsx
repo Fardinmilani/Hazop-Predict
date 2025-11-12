@@ -1,12 +1,79 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { fileAPI, projectAPI, libraryAPI } from '../utils/api'
+import { fileAPI, projectAPI, libraryAPI, rankingAPI } from '../utils/api'
 import { Save, FolderOpen, FilePlus, X } from 'lucide-react'
+
+const getSafeName = (file) => (file?.name || '').toLowerCase()
+const getSafeType = (file) => (file?.type || '').toLowerCase()
+const isProjectFile = (file) => getSafeType(file) === 'project' || getSafeName(file) === 'project.xlsx'
+const isLibraryFile = (file) => getSafeType(file) === 'library' || getSafeName(file) === 'library.json'
+const isRankingFile = (file) => {
+  const name = getSafeName(file)
+  const type = getSafeType(file)
+  if (type === 'ranking') return true
+  if (!name) return false
+  if (name === 'ranking.xlsx') return true
+  if (name.includes('ranking.xlsx')) return true
+  if (name.endsWith('.xlsx') && name.includes('ranking')) return true
+  return false
+}
+const getFileKey = (file) => {
+  if (isProjectFile(file)) return 'project'
+  if (isLibraryFile(file)) return 'library'
+  if (isRankingFile(file)) return 'ranking'
+  return getSafeName(file)
+}
 
 function FilePage() {
   const [activeFiles, setActiveFiles] = useState([]) // Track currently active/opened files
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
   const fileInputRef = useRef(null)
+
+  const normalizeFileEntry = (file) => {
+    if (!file) return file
+    if (isProjectFile(file)) {
+      return { ...file, type: 'project' }
+    }
+    if (isLibraryFile(file)) {
+      return { ...file, type: 'library' }
+    }
+    if (isRankingFile(file)) {
+      return { ...file, type: 'ranking' }
+    }
+    const safeType = getSafeType(file)
+    if (safeType && safeType !== file.type) {
+      return { ...file, type: safeType }
+    }
+    return file
+  }
+
+  const normalizeStoredFiles = (files) => {
+    if (!Array.isArray(files)) return []
+    let mutated = false
+    const normalized = files.map((file) => {
+      const updated = normalizeFileEntry(file)
+      if (updated !== file) {
+        mutated = true
+      }
+      return updated
+    })
+    if (mutated) {
+      localStorage.setItem('activeFiles', JSON.stringify(normalized))
+    }
+    return normalized
+  }
+
+  const getStoredActiveFiles = () => {
+    try {
+      const stored = localStorage.getItem('activeFiles')
+      const parsed = stored ? JSON.parse(stored) : []
+      return normalizeStoredFiles(parsed)
+    } catch (error) {
+      console.error('Failed to parse stored active files:', error)
+      localStorage.removeItem('activeFiles')
+      return []
+    }
+  }
   
   // Modals state
   const [showNewModal, setShowNewModal] = useState(false)
@@ -14,42 +81,44 @@ function FilePage() {
 
   useEffect(() => {
     // Load active files from localStorage
-    const saved = localStorage.getItem('activeFiles')
-    const savedFiles = saved ? JSON.parse(saved) : []
+    const savedFiles = getStoredActiveFiles()
     
     // Check for existing backend files and add them if they have data
-    checkBackendFiles(savedFiles)
+    checkBackendFiles([...savedFiles])
     
     // Listen for data updates from other pages
     const handleDataUpdate = () => {
       // Refresh active files when data is updated
-      const currentFiles = JSON.parse(localStorage.getItem('activeFiles') || '[]')
-      checkBackendFiles(currentFiles)
+      const currentFiles = getStoredActiveFiles()
+      checkBackendFiles([...currentFiles])
     }
     
     // Listen for file opened events to refresh the list
     const handleFileOpened = () => {
       // Refresh active files when a file is opened
       setTimeout(() => {
-        const currentFiles = JSON.parse(localStorage.getItem('activeFiles') || '[]')
-        checkBackendFiles(currentFiles)
+        const currentFiles = getStoredActiveFiles()
+        checkBackendFiles([...currentFiles])
       }, 500)
     }
     
-    // Listen for custom events from Project and Library pages
+    // Listen for custom events from Project, Library, and Ranking pages
     window.addEventListener('project-updated', handleDataUpdate)
     window.addEventListener('library-updated', handleDataUpdate)
+    window.addEventListener('ranking-updated', handleDataUpdate)
     window.addEventListener('file-opened', handleFileOpened)
     
     return () => {
       window.removeEventListener('project-updated', handleDataUpdate)
       window.removeEventListener('library-updated', handleDataUpdate)
+      window.removeEventListener('ranking-updated', handleDataUpdate)
       window.removeEventListener('file-opened', handleFileOpened)
     }
   }, [])
 
   const checkBackendFiles = async (existingFiles) => {
     try {
+      let files = existingFiles.map((file) => normalizeFileEntry(file))
       // Check if project.xlsx exists and has data
       const projResponse = await projectAPI.get()
       if (projResponse.data.success) {
@@ -57,21 +126,28 @@ function FilePage() {
         // Check if project has data (rows or columns)
         if ((projectData.rows && projectData.rows.length > 0) || 
             (projectData.columns && projectData.columns.length > 0)) {
-          const projectFile = { name: 'project.xlsx', type: 'project', openedAt: new Date().toISOString() }
-          const existingIndex = existingFiles.findIndex(f => f.name === 'project.xlsx')
+          const projectFile = normalizeFileEntry({
+            name: 'project.xlsx',
+            type: 'project',
+            openedAt: new Date().toISOString()
+          })
+          const existingIndex = files.findIndex(isProjectFile)
           if (existingIndex === -1) {
-            existingFiles.push(projectFile)
+            files.push(projectFile)
           } else {
             // Update existing file
-            existingFiles[existingIndex] = projectFile
+            files[existingIndex] = {
+              ...files[existingIndex],
+              ...projectFile
+            }
           }
         } else {
           // Remove from list if no data
-          existingFiles = existingFiles.filter(f => f.name !== 'project.xlsx')
+          files = files.filter(f => !isProjectFile(f))
         }
       } else {
         // Remove from list if error
-        existingFiles = existingFiles.filter(f => f.name !== 'project.xlsx')
+        files = files.filter(f => !isProjectFile(f))
       }
 
       // Check if library.json exists and has data
@@ -79,25 +155,67 @@ function FilePage() {
       if (libResponse.data.success) {
         const libraryData = libResponse.data.data
         if (libraryData.headers && libraryData.headers.length > 0) {
-          const libraryFile = { name: 'library.json', type: 'library', openedAt: new Date().toISOString() }
-          const existingIndex = existingFiles.findIndex(f => f.name === 'library.json')
+          const libraryFile = normalizeFileEntry({
+            name: 'library.json',
+            type: 'library',
+            openedAt: new Date().toISOString()
+          })
+          const existingIndex = files.findIndex(isLibraryFile)
           if (existingIndex === -1) {
-            existingFiles.push(libraryFile)
+            files.push(libraryFile)
           } else {
             // Update existing file
-            existingFiles[existingIndex] = libraryFile
+            files[existingIndex] = {
+              ...files[existingIndex],
+              ...libraryFile
+            }
           }
         } else {
           // Remove from list if no data
-          existingFiles = existingFiles.filter(f => f.name !== 'library.json')
+          files = files.filter(f => !isLibraryFile(f))
         }
       } else {
         // Remove from list if error
-        existingFiles = existingFiles.filter(f => f.name !== 'library.json')
+        files = files.filter(f => !isLibraryFile(f))
+      }
+
+      // Check if ranking.xlsx exists and has data
+      try {
+        const rankResponse = await rankingAPI.get()
+        if (rankResponse.data && rankResponse.data.success) {
+          const rankingData = rankResponse.data.data || {}
+          // Check if ranking has any data
+          const hasData = (rankingData.criteriaWeights && Object.keys(rankingData.criteriaWeights).length > 0) ||
+                         (rankingData.alternativesScores && Object.keys(rankingData.alternativesScores).length > 0) ||
+                         (rankingData.rankingResult !== null && rankingData.rankingResult !== undefined)
+          
+          if (hasData) {
+            const rankingFile = normalizeFileEntry({
+              name: 'ranking.xlsx',
+              type: 'ranking',
+              openedAt: new Date().toISOString()
+            })
+            const existingIndex = files.findIndex(isRankingFile)
+            if (existingIndex === -1) {
+              files.push(rankingFile)
+            } else {
+              files[existingIndex] = {
+                ...files[existingIndex],
+                ...rankingFile
+              }
+            }
+          } else {
+            files = files.filter(f => !isRankingFile(f))
+          }
+        } else {
+          files = files.filter(f => !isRankingFile(f))
+        }
+      } catch (error) {
+        files = files.filter(f => !isRankingFile(f))
       }
 
       // Update active files
-      updateActiveFiles(existingFiles)
+      updateActiveFiles(files)
     } catch (error) {
       console.error('Error checking backend files:', error)
       // If error, just use saved files
@@ -109,19 +227,21 @@ function FilePage() {
 
   const updateActiveFiles = (files) => {
     // Remove duplicates based on name
-    const uniqueFiles = files.filter((file, index, self) => 
-      index === self.findIndex(f => f.name === file.name)
+    const normalizedFiles = files.map((file) => normalizeFileEntry(file))
+    const uniqueFiles = normalizedFiles.filter((file, index, self) => 
+      index === self.findIndex(f => getFileKey(f) === getFileKey(file))
     )
     setActiveFiles(uniqueFiles)
     localStorage.setItem('activeFiles', JSON.stringify(uniqueFiles))
   }
 
   const addActiveFile = (filename, type) => {
-    const newFile = {
+    const normalizedType = (type || '').toLowerCase()
+    const newFile = normalizeFileEntry({
       name: filename,
-      type: type, // 'project', 'library', etc.
+      type: normalizedType || undefined, // 'project', 'library', etc.
       openedAt: new Date().toISOString()
-    }
+    })
     const updated = [...activeFiles, newFile]
     updateActiveFiles(updated)
   }
@@ -180,9 +300,12 @@ function FilePage() {
         
         // Determine file type based on content or extension
         const fileExt = file.name.split('.').pop().toLowerCase()
+        const fileName = file.name.toLowerCase()
         let fileType = 'project'
         if (fileExt === 'json' || (result.data.headers && !result.data.rows)) {
           fileType = 'library'
+        } else if (fileName.includes('ranking') || (result.data.criteriaWeights || result.data.alternativesScores)) {
+          fileType = 'ranking'
         }
         
         // If it's a project file, save it to backend and dispatch event
@@ -200,6 +323,26 @@ function FilePage() {
           } catch (error) {
             console.error('Error saving project:', error)
             setMessage({ type: 'error', text: 'Failed to save project data' })
+          }
+        } else if (fileType === 'ranking') {
+          // For ranking files, save to backend and dispatch event
+          const rankingData = result.data
+          // Save to backend first
+          try {
+            await rankingAPI.update(
+              rankingData.criteriaWeights || {},
+              rankingData.alternativesScores || {},
+              rankingData.rankingResult || null
+            )
+            // Then dispatch event to load in RankingPage
+            window.dispatchEvent(new CustomEvent('ranking-open', { detail: rankingData }))
+            // Add to active files
+            addActiveFile(file.name, fileType)
+            // Notify that file was opened
+            window.dispatchEvent(new CustomEvent('file-opened'))
+          } catch (error) {
+            console.error('Error saving ranking:', error)
+            setMessage({ type: 'error', text: 'Failed to save ranking data' })
           }
         } else {
           // For library files, save to backend and dispatch event
@@ -256,6 +399,13 @@ function FilePage() {
         const libResponse = await libraryAPI.get()
         if (libResponse.data.success) {
           dataToSave.library = libResponse.data.data
+        }
+      }
+      
+      if (dataTypes.includes('ranking')) {
+        const rankResponse = await rankingAPI.get()
+        if (rankResponse.data.success) {
+          dataToSave.ranking = rankResponse.data.data
         }
       }
 
@@ -411,6 +561,87 @@ function FilePage() {
               setMessage({ type: 'error', text: error.error || 'Failed to save project' })
             }
           }
+        } else if (dataType === 'ranking') {
+          // Save ranking as Excel
+          if ('showSaveFilePicker' in window) {
+            try {
+              const fileHandle = await window.showSaveFilePicker({
+                suggestedName: 'ranking.xlsx',
+                types: [{
+                  description: 'Excel files',
+                  accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+                }]
+              })
+
+              const saveData = {
+                data: dataToSave.ranking,
+                filename: fileHandle.name
+              }
+
+              const response = await fetch('http://localhost:5000/api/file/save', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(saveData)
+              })
+
+              if (response.ok) {
+                const blob = await response.blob()
+                const writable = await fileHandle.createWritable()
+                await writable.write(blob)
+                await writable.close()
+                
+                setMessage({ type: 'success', text: 'Ranking saved successfully' })
+                // Don't add to active files - only when opened
+              } else {
+                const error = await response.json()
+                setMessage({ type: 'error', text: error.error || 'Failed to save ranking' })
+              }
+            } catch (err) {
+              if (err.name !== 'AbortError') {
+                setMessage({ type: 'error', text: 'Failed to save ranking' })
+              }
+            }
+          } else {
+            // Fallback: use download
+            const filename = prompt('Enter filename (without extension):', 'ranking')
+            if (!filename) {
+              setLoading(false)
+              return
+            }
+
+            const saveData = {
+              data: dataToSave.ranking,
+              filename: filename
+            }
+
+            const response = await fetch('http://localhost:5000/api/file/save', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(saveData)
+            })
+
+            if (response.ok) {
+              const blob = await response.blob()
+              const url = window.URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `${filename}.xlsx`
+              document.body.appendChild(a)
+              a.click()
+              window.URL.revokeObjectURL(url)
+              document.body.removeChild(a)
+              
+              setMessage({ type: 'success', text: 'Ranking saved successfully' })
+              // Don't add to active files - only when opened
+            } else {
+              const error = await response.json()
+              setMessage({ type: 'error', text: error.error || 'Failed to save ranking' })
+            }
+          }
         }
       }
     } catch (error) {
@@ -423,8 +654,13 @@ function FilePage() {
 
 
   const handleRemoveFromList = async (file) => {
+    const isProject = isProjectFile(file)
+    const isLibrary = isLibraryFile(file)
+    const isRanking = isRankingFile(file)
+    const displayType = file.type || (isProject ? 'project' : isLibrary ? 'library' : isRanking ? 'ranking' : 'unknown')
+
     // Show confirmation dialog
-    const confirmMessage = `Warning: This file will be permanently deleted from the application.\n\nPlease make sure you have saved a backup copy of this file before proceeding.\n\nFile: ${file.name}\nType: ${file.type}\n\nAre you sure you want to delete this file?`
+    const confirmMessage = `Warning: This file will be permanently deleted from the application.\n\nPlease make sure you have saved a backup copy of this file before proceeding.\n\nFile: ${file.name}\nType: ${displayType}\n\nAre you sure you want to delete this file?`
     
     if (!window.confirm(confirmMessage)) {
       return // User cancelled
@@ -433,37 +669,54 @@ function FilePage() {
     setLoading(true)
     try {
       // Delete from backend based on file type
-      if (file.name === 'project.xlsx' || file.type === 'project') {
-        // Clear project data
+      if (isProject) {
         await projectAPI.update([], [])
         setMessage({ type: 'success', text: 'Project file removed and data cleared' })
-      } else if (file.name === 'library.json' || file.type === 'library') {
-        // Clear library data
+      } else if (isLibrary) {
         await libraryAPI.save({ headers: [] })
         setMessage({ type: 'success', text: 'Library file removed and data cleared' })
+      } else if (isRanking) {
+        try {
+          await rankingAPI.delete()
+          setMessage({ type: 'success', text: 'Ranking file removed and data cleared' })
+        } catch (error) {
+          console.error('Error deleting ranking file:', error)
+          setMessage({ type: 'error', text: 'Failed to delete ranking data from backend. Removed from list only.' })
+        }
+        
+        // Emit event to clear data in RankingPage
+        window.dispatchEvent(new CustomEvent('ranking-deleted'))
       }
 
       // Remove from active files list
-      const updated = activeFiles.filter(f => f.name !== file.name)
+      const updated = activeFiles.filter((f) => {
+        if (isProject) return !isProjectFile(f)
+        if (isLibrary) return !isLibraryFile(f)
+        if (isRanking) return !isRankingFile(f)
+        return getFileKey(f) !== getFileKey(file)
+      })
       updateActiveFiles(updated)
+      console.log('Removed file from active files list:', file.name)
       
       // Emit events to clear data in other pages
-      if (file.type === 'project') {
+      if (isProject) {
         window.dispatchEvent(new CustomEvent('project-new', { detail: { rows: [], columns: [] } }))
         // Also trigger project-updated to refresh
         window.dispatchEvent(new CustomEvent('project-updated'))
-      } else if (file.type === 'library') {
+      } else if (isLibrary) {
         window.dispatchEvent(new CustomEvent('library-updated'))
+      } else if (isRanking) {
+        window.dispatchEvent(new CustomEvent('ranking-updated'))
       }
       
       // Refresh the active files list to remove deleted files
       setTimeout(() => {
-        const currentFiles = JSON.parse(localStorage.getItem('activeFiles') || '[]')
-        checkBackendFiles(currentFiles)
+        const currentFiles = getStoredActiveFiles()
+        checkBackendFiles([...currentFiles])
       }, 500)
     } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to remove file' })
       console.error('Error removing file:', error)
+      setMessage({ type: 'error', text: 'Failed to remove file: ' + (error.message || 'Unknown error') })
     } finally {
       setLoading(false)
     }
@@ -608,6 +861,17 @@ function FilePage() {
                   <div className="text-xs text-gray-500">Save library configuration</div>
                 </div>
               </label>
+              <label className="flex items-center space-x-3 p-3 border border-gray-300 rounded hover:bg-blue-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="save-ranking"
+                  className="rounded"
+                />
+                <div>
+                  <div className="font-medium text-gray-800">Ranking</div>
+                  <div className="text-xs text-gray-500">Save ranking data</div>
+                </div>
+              </label>
             </div>
             <div className="mt-4 flex space-x-2">
               <button
@@ -618,6 +882,9 @@ function FilePage() {
                   }
                   if (document.getElementById('save-library').checked) {
                     selected.push('library')
+                  }
+                  if (document.getElementById('save-ranking').checked) {
+                    selected.push('ranking')
                   }
                   handleSave(selected)
                 }}
