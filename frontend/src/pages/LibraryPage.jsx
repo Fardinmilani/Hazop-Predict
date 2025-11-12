@@ -12,6 +12,33 @@ function LibraryPage() {
 
   useEffect(() => {
     loadLibrary()
+    
+    // Listen for library updates
+    const handleLibraryUpdate = () => {
+      loadLibrary()
+    }
+    
+    // Listen for library open events from FilePage
+    const handleLibraryOpen = async (e) => {
+      const libraryData = e.detail
+      if (libraryData && libraryData.headers) {
+        setLibrary(libraryData)
+        // Save to backend
+        try {
+          await libraryAPI.save(libraryData)
+        } catch (error) {
+          console.error('Error saving library:', error)
+        }
+      }
+    }
+    
+    window.addEventListener('library-updated', handleLibraryUpdate)
+    window.addEventListener('library-open', handleLibraryOpen)
+    
+    return () => {
+      window.removeEventListener('library-updated', handleLibraryUpdate)
+      window.removeEventListener('library-open', handleLibraryOpen)
+    }
   }, [])
 
   const loadLibrary = async () => {
@@ -38,6 +65,8 @@ function LibraryPage() {
         setLibrary(response.data.data)
         setNewHeader({ name: '', options: [] })
         setMessage({ type: 'success', text: 'Header added successfully' })
+        // Emit event to notify FilePage
+        window.dispatchEvent(new CustomEvent('library-updated'))
       }
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to add header' })
@@ -54,6 +83,8 @@ function LibraryPage() {
         setLibrary(response.data.data)
         setEditingIndex(null)
         setMessage({ type: 'success', text: 'Header updated successfully' })
+        // Emit event to notify FilePage
+        window.dispatchEvent(new CustomEvent('library-updated'))
       }
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to update header' })
@@ -71,6 +102,8 @@ function LibraryPage() {
       if (response.data.success) {
         setLibrary(response.data.data)
         setMessage({ type: 'success', text: 'Header deleted successfully' })
+        // Emit event to notify FilePage
+        window.dispatchEvent(new CustomEvent('library-updated'))
       }
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to delete header' })

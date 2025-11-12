@@ -20,8 +20,10 @@ function ProjectPage() {
       const cols = e.detail.columns || []
       setRows(rows)
       setColumns(cols)
-      // Save the new project
-      await updateProject(rows, cols)
+      // Save the new project (only if not empty)
+      if (rows.length > 0 || cols.length > 0) {
+        await updateProject(rows, cols)
+      }
     }
     const handleOpen = async (e) => {
       if (Array.isArray(e.detail)) {
@@ -32,14 +34,20 @@ function ProjectPage() {
           setRows(e.detail)
           // Save the loaded data
           await updateProject(e.detail, cols)
+        } else {
+          // Empty array
+          setRows([])
+          setColumns([])
         }
       } else {
         const rows = e.detail.rows || []
         const cols = e.detail.columns || []
         setRows(rows)
         setColumns(cols)
-        // Save the loaded data
-        await updateProject(rows, cols)
+        // Save the loaded data (only if not empty)
+        if (rows.length > 0 || cols.length > 0) {
+          await updateProject(rows, cols)
+        }
       }
     }
     
@@ -110,6 +118,8 @@ function ProjectPage() {
   const updateProject = async (newRows, newColumns) => {
     try {
       await projectAPI.update(newRows, newColumns)
+      // Emit event to notify FilePage
+      window.dispatchEvent(new CustomEvent('project-updated'))
     } catch (error) {
       console.error('Error updating project:', error)
     }

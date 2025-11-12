@@ -31,7 +31,15 @@ def save_library():
     library_data = data.get('data', {})
     
     try:
-        save_json(library_data, LIBRARY_FILE)
+        # If headers are empty, delete the file
+        if not library_data.get('headers') or len(library_data.get('headers', [])) == 0:
+            from pathlib import Path
+            DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+            filepath = DATA_DIR / LIBRARY_FILE
+            if filepath.exists():
+                filepath.unlink()
+        else:
+            save_json(library_data, LIBRARY_FILE)
         return jsonify({
             'success': True,
             'message': 'Library saved successfully'

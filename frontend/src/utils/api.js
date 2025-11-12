@@ -16,9 +16,22 @@ const api = axios.create({
 // File API
 export const fileAPI = {
   new: () => api.post('/file/new'),
-  open: (filename, type = 'json') => api.post('/file/open', { filename, type }),
-  save: (data, filename, type = 'json') => api.post('/file/save', { data, filename, type }),
-  saveAs: (data, filename, type = 'json') => api.post('/file/save-as', { data, filename, type }),
+  open: (fileOrFilename) => {
+    // If it's a File object, use FormData, otherwise use JSON with filename
+    if (fileOrFilename instanceof File) {
+      const formData = new FormData()
+      formData.append('file', fileOrFilename)
+      return api.post('/file/open', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+    } else {
+      // It's a filename string
+      return api.post('/file/open', { filename: fileOrFilename })
+    }
+  },
+  save: (data, filename) => api.post('/file/save', { data, filename }),
   list: () => api.get('/file/list'),
   download: (filename) => api.get(`/file/download/${filename}`, { responseType: 'blob' })
 }
