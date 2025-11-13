@@ -75,7 +75,8 @@ def get_ranking():
         ranking_data = {
             'criteriaWeights': {},
             'alternativesScores': {},
-            'rankingResult': None
+            'rankingResult': None,
+            'columns': []
         }
         
         if filepath.exists():
@@ -85,6 +86,16 @@ def get_ranking():
                 criteria_weights = {}
                 alternatives_scores = {}
                 ranking_result = None
+                ranking_columns = []
+                
+                # Sheet 0: Ranking Columns (optional)
+                if 'RankingColumns' in xls.sheet_names:
+                    df_columns = pd.read_excel(filepath, sheet_name='RankingColumns')
+                    for _, row in df_columns.iterrows():
+                        if 'column' in row:
+                            col = str(row['column']).strip()
+                            if pd.notna(col) and col:
+                                ranking_columns.append(col)
                 
                 # Sheet 1: Criteria Weights
                 if 'CriteriaWeights' in xls.sheet_names:
@@ -137,7 +148,8 @@ def get_ranking():
                 ranking_data = {
                     'criteriaWeights': criteria_weights,
                     'alternativesScores': alternatives_scores,
-                    'rankingResult': ranking_result
+                    'rankingResult': ranking_result,
+                    'columns': ranking_columns
                 }
             except Exception as e:
                 # If parsing fails, return empty structure
@@ -153,7 +165,8 @@ def get_ranking():
             ranking_data = {
                 'criteriaWeights': {},
                 'alternativesScores': {},
-                'rankingResult': None
+                'rankingResult': None,
+                'columns': []
             }
         
         return jsonify({
@@ -167,7 +180,8 @@ def get_ranking():
             'data': {
                 'criteriaWeights': {},
                 'alternativesScores': {},
-                'rankingResult': None
+                'rankingResult': None,
+                'columns': []
             }
         }), 500
 
@@ -208,6 +222,160 @@ def delete_ranking():
             'error': str(e)
         }), 500
 
+@ranking_bp.route('/cell/update', methods=['POST'])
+def update_ranking_cell():
+    """Update a single cell in ranking (score or weight)"""
+    try:
+        data = request.json
+        cell_type = data.get('type')  # 'score' or 'weight'
+        alternative = data.get('alternative', '')
+        criteria = data.get('criteria', '')
+        value = data.get('value', '')
+        
+        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR.mkdir(exist_ok=True)
+        filepath = DATA_DIR / RANKING_FILE
+        
+        # Load existing data
+        ranking_data = {
+            'criteriaWeights': {},
+            'alternativesScores': {},
+            'rankingResult': None,
+            'columns': []
+        }
+        
+        if filepath.exists():
+            try:
+                xls = pd.ExcelFile(filepath)
+                
+                # Load columns
+                if 'RankingColumns' in xls.sheet_names:
+                    df_columns = pd.read_excel(filepath, sheet_name='RankingColumns')
+                    ranking_data['columns'] = [str(row['column']).strip() for _, row in df_columns.iterrows() if 'column' in row and pd.notna(row['column'])]
+                
+                # Load criteria weights
+                if 'CriteriaWeights' in xls.sheet_names:
+                    df_weights = pd.read_excel(filepath, sheet_name='CriteriaWeights')
+                    for _, row in df_weights.iterrows():
+                        if 'criteria' in row and 'weight' in row:
+                            try:
+                                criteria_name = str(row['criteria']).strip()
+                                weight = row['weight']
+                                if pd.notna(criteria_name) and pd.notna(weight):
+                                    ranking_data['criteriaWeights'][criteria_name] = float(weight)
+                            except (ValueError, TypeError):
+                                continue
+                
+                # Load alternatives scores
+                if 'AlternativesScores' in xls.sheet_names:
+                    df_scores = pd.read_excel(filepath, sheet_name='AlternativesScores')
+                    for _, row in df_scores.iterrows():
+                        if 'alternative' in row and 'criteria' in row and 'score' in row:
+                            try:
+                                alt = str(row['alternative']).strip()
+                                criteria_name = str(row['criteria']).strip()
+                                score = row['score']
+                                if pd.notna(alt) and pd.notna(criteria_name) and pd.notna(score):
+                                    score_val = float(score)
+                                    if alt not in ranking_data['alternativesScores']:
+                                        ranking_data['alternativesScores'][alt] = {}
+                                    ranking_data['alternativesScores'][alt][criteria_name] = score_val
+                            except (ValueError, TypeError):
+                                continue
+                
+                # Load ranking result
+                if 'RankingResult' in xls.sheet_names:
+                    df_result = pd.read_excel(filepath, sheet_name='RankingResult')
+                    ranking_result = {
+                        'ranking': [
+                            {'alternative': str(row['alternative']), 'score': float(row['score'])}
+                            for _, row in df_result.iterrows()
+                            if 'alternative' in row and 'score' in row and pd.notna(row['alternative']) and pd.notna(row['score'])
+                        ]
+                    }
+                    if ranking_result['ranking']:
+                        ranking_data['rankingResult'] = ranking_result
+            except Exception as e:
+                print(f"Error loading ranking file: {str(e)}")
+        
+        # Update the specific cell
+        if cell_type == 'weight':
+            # Update criteria weight
+            if criteria:
+                try:
+                    weight_value = float(value) if value != '' else 0
+                    ranking_data['criteriaWeights'][criteria] = weight_value
+                except (ValueError, TypeError):
+                    ranking_data['criteriaWeights'][criteria] = 0
+        elif cell_type == 'score':
+            # Update alternative score
+            if alternative and criteria:
+                if alternative not in ranking_data['alternativesScores']:
+                    ranking_data['alternativesScores'][alternative] = {}
+                try:
+                    score_value = float(value) if value != '' else 0
+                    ranking_data['alternativesScores'][alternative][criteria] = score_value
+                except (ValueError, TypeError):
+                    ranking_data['alternativesScores'][alternative][criteria] = 0
+        
+        # Save updated data
+        with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            # Sheet 0: Ranking Columns
+            if ranking_data['columns']:
+                df_columns = pd.DataFrame([{'column': col} for col in ranking_data['columns']])
+                df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
+            
+            # Sheet 1: Criteria Weights
+            if ranking_data['criteriaWeights']:
+                df_weights = pd.DataFrame([
+                    {'criteria': k, 'weight': v}
+                    for k, v in ranking_data['criteriaWeights'].items()
+                ])
+                df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
+            
+            # Sheet 2: Alternatives Scores
+            if ranking_data['alternativesScores']:
+                scores_rows = []
+                for alt, scores in ranking_data['alternativesScores'].items():
+                    if scores and isinstance(scores, dict):
+                        for criteria_name, score in scores.items():
+                            score_value = 0
+                            if score is not None and score != '':
+                                try:
+                                    score_value = float(score)
+                                except (ValueError, TypeError):
+                                    score_value = 0
+                            
+                            scores_rows.append({
+                                'alternative': str(alt),
+                                'criteria': str(criteria_name),
+                                'score': score_value
+                            })
+                
+                if scores_rows:
+                    df_scores = pd.DataFrame(scores_rows)
+                    df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
+                else:
+                    df_scores = pd.DataFrame(columns=['alternative', 'criteria', 'score'])
+                    df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
+            
+            # Sheet 3: Ranking Result
+            if ranking_data['rankingResult'] and ranking_data['rankingResult'].get('ranking'):
+                df_result = pd.DataFrame(ranking_data['rankingResult']['ranking'])
+                df_result.to_excel(writer, sheet_name='RankingResult', index=False)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Cell updated successfully'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @ranking_bp.route('/update', methods=['POST'])
 def update_ranking():
     """Update ranking data and save to Excel"""
@@ -216,6 +384,7 @@ def update_ranking():
         criteria_weights = data.get('criteriaWeights', {})
         alternatives_scores = data.get('alternativesScores', {})
         ranking_result = data.get('rankingResult', None)
+        ranking_columns = data.get('columns', [])
         
         DATA_DIR = Path(__file__).parent.parent.parent / 'data'
         DATA_DIR.mkdir(exist_ok=True)
@@ -223,6 +392,14 @@ def update_ranking():
         
         # Save as Excel with multiple sheets
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            # Sheet 0: Ranking Columns
+            if ranking_columns:
+                df_columns = pd.DataFrame([
+                    {'column': col}
+                    for col in ranking_columns
+                ])
+                df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
+            
             # Sheet 1: Criteria Weights
             if criteria_weights:
                 df_weights = pd.DataFrame([
@@ -268,7 +445,8 @@ def update_ranking():
             'data': {
                 'criteriaWeights': criteria_weights,
                 'alternativesScores': alternatives_scores,
-                'rankingResult': ranking_result
+                'rankingResult': ranking_result,
+                'columns': ranking_columns
             }
         })
     except Exception as e:

@@ -696,7 +696,6 @@ function FilePage() {
         return getFileKey(f) !== getFileKey(file)
       })
       updateActiveFiles(updated)
-      console.log('Removed file from active files list:', file.name)
       
       // Emit events to clear data in other pages
       if (isProject) {

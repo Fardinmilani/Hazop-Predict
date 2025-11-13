@@ -163,6 +163,9 @@ function ProjectPage() {
 
       const rankingData = rankResponse.data.data || {}
       const existingAlternatives = rankingData.alternativesScores || {}
+      const existingColumns = rankingData.columns || [] // Preserve existing columns
+      const existingWeights = rankingData.criteriaWeights || {} // Preserve existing weights
+      
       let existingKeys = Object.keys(existingAlternatives).sort((a, b) => {
         const rowNoA = parseInt((a.match(/\d+/) || [0])[0], 10)
         const rowNoB = parseInt((b.match(/\d+/) || [0])[0], 10)
@@ -188,10 +191,12 @@ function ProjectPage() {
         }
       })
 
+      // Update ranking while preserving columns and weights
       await rankingAPI.update(
-        rankingData.criteriaWeights || {},
+        existingWeights, // Preserve existing weights
         reorderedAlternatives,
-        null // Invalidate ranking result since data changed
+        null, // Invalidate ranking result since data changed
+        existingColumns // Preserve existing columns
       )
 
       // Inform other listeners that ranking data changed

@@ -173,13 +173,6 @@ function LibraryPage() {
       return
     }
     
-    // Ensure we have the latest editingHeader state
-    console.log('Saving header:', {
-      oldName: oldHeader.name,
-      newName: editingHeader.name,
-      options: editingHeader.options
-    })
-    
     setLoading(true)
     try {
       const response = await libraryAPI.updateHeader(

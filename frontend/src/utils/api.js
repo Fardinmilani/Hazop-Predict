@@ -70,8 +70,10 @@ export const methodologyAPI = {
 // Ranking API
 export const rankingAPI = {
   get: () => api.get('/ranking/get'),
-  update: (criteriaWeights, alternativesScores, rankingResult) => 
-    api.post('/ranking/update', { criteriaWeights, alternativesScores, rankingResult }),
+  update: (criteriaWeights, alternativesScores, rankingResult, columns = []) => 
+    api.post('/ranking/update', { criteriaWeights, alternativesScores, rankingResult, columns }),
+  updateCell: (type, alternative, criteria, value) =>
+    api.post('/ranking/cell/update', { type, alternative, criteria, value }),
   delete: () => api.post('/ranking/delete'),
   ahp: (criteriaWeights, alternativesScores) => 
     api.post('/ranking/ahp', { criteriaWeights, alternativesScores }),

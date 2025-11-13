@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { rankingAPI, projectAPI, libraryAPI } from '../utils/api'
-import { BarChart3, AlertCircle } from 'lucide-react'
+import { BarChart3, AlertCircle, X } from 'lucide-react'
 
 function RankingPage() {
   const [projectData, setProjectData] = useState([])
@@ -11,6 +11,8 @@ function RankingPage() {
   const [rankingResult, setRankingResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [showAddColumnModal, setShowAddColumnModal] = useState(false)
+  const [newColumnName, setNewColumnName] = useState('')
   
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
@@ -98,14 +100,12 @@ function RankingPage() {
     
     // Listen for ranking deletion/clear event
     const handleRankingDeleted = async () => {
-      console.log('Ranking deleted event received - clearing all data')
       // Clear all ranking data immediately when file is deleted
       isSyncingRef.current = true
       setCriteriaWeights({})
       setRankingResult(null)
       // Clear alternatives but keep structure from project if exists
       const rows = await loadProjectData()
-      console.log('Project rows after deletion:', rows?.length || 0)
       if (rows && rows.length > 0) {
         const newScores = {}
         rows.forEach(row => {
@@ -114,14 +114,11 @@ function RankingPage() {
           newScores[altKey] = {}
         })
         setAlternativesScores(newScores)
-        console.log('Cleared alternatives scores, new structure:', Object.keys(newScores))
       } else {
         setAlternativesScores({})
-        console.log('Cleared all alternatives scores (no project rows)')
       }
       // Reload ranking data to ensure it's empty (this will verify from backend)
       await loadRankingData(rows)
-      console.log('Ranking data cleared and reloaded')
     }
     
     // Listen for ranking updates (refresh data)
@@ -134,14 +131,13 @@ function RankingPage() {
     // Listen for project row deletion
     const handleProjectRowDeleted = async (e) => {
       const { deletedRowNo, newRows } = e.detail
-      console.log('Project row deleted, rowNo:', deletedRowNo, 'New rows:', newRows)
       
       isSyncingRef.current = true
       setAlternativesScores(prevScores => {
         if (!newRows || newRows.length === 0) {
-          // All rows removed - clear alternatives
+          // All rows removed - clear alternatives but preserve columns
           setTimeout(async () => {
-            await updateRanking(criteriaWeights, {}, rankingResult)
+            await updateRanking(criteriaWeights, {}, rankingResult, rankingColumns)
           }, 0)
           return {}
         }
@@ -170,7 +166,10 @@ function RankingPage() {
           }
         })
         
-        console.log('Deleted alternative row', deletedRowNo, '-> new alternatives:', Object.keys(newScores))
+        // Save updated scores while preserving columns and weights
+        setTimeout(async () => {
+          await updateRanking(criteriaWeights, newScores, rankingResult, rankingColumns)
+        }, 100)
         
         return newScores
       })
@@ -235,21 +234,23 @@ function RankingPage() {
   }, [projectData.length])
 
   // Auto-save when alternativesScores changes (but only if it's a user change, not a sync)
-  useEffect(() => {
-    if (isSyncingRef.current) {
-      isSyncingRef.current = false
-      return // Don't save during sync
-    }
-    
-    if (Object.keys(alternativesScores).length > 0) {
-      // Only save if we have alternatives that match project rows
-      const numRows = projectData.length
-      const numAlternatives = Object.keys(alternativesScores).length
-      if (numAlternatives === numRows && numRows > 0) {
-        updateRanking(criteriaWeights, alternativesScores, rankingResult)
-      }
-    }
-  }, [alternativesScores])
+  // NOTE: This is disabled because we now use updateCell for individual cell changes
+  // This useEffect is kept for potential future use but currently disabled
+  // useEffect(() => {
+  //   if (isSyncingRef.current) {
+  //     isSyncingRef.current = false
+  //     return // Don't save during sync
+  //   }
+  //   
+  //   if (Object.keys(alternativesScores).length > 0) {
+  //     // Only save if we have alternatives that match project rows
+  //     const numRows = projectData.length
+  //     const numAlternatives = Object.keys(alternativesScores).length
+  //     if (numAlternatives === numRows && numRows > 0) {
+  //       updateRanking(criteriaWeights, alternativesScores, rankingResult)
+  //     }
+  //   }
+  // }, [alternativesScores])
 
   const loadProjectData = async () => {
     try {
@@ -270,37 +271,23 @@ function RankingPage() {
   }
 
   const loadLibrary = async () => {
-    try {
-      const response = await libraryAPI.get()
-      if (response.data.success) {
-        // Filter columns that might be used for ranking
-        // In a real app, you'd have a separate "Ranking Library" section
-        setRankingColumns(response.data.data.headers.map(h => h.name))
-      }
-    } catch (error) {
-      console.error('Error loading library:', error)
-    }
+    // No longer needed - columns are managed independently
+    // Keeping for potential future use
   }
 
   const loadRankingData = async (currentProjectRows = null) => {
     try {
-      console.log('Loading ranking data...')
       const response = await rankingAPI.get()
-      console.log('Ranking API get response:', response)
       if (response.data && response.data.success) {
         const data = response.data.data || {}
-        console.log('Ranking data received:', data)
         
         // Check if file was deleted (all data is empty)
         const hasCriteria = data.criteriaWeights && Object.keys(data.criteriaWeights).length > 0
         const hasAlternatives = data.alternativesScores && Object.keys(data.alternativesScores).length > 0
         const hasResult = data.rankingResult && data.rankingResult !== null
         
-        console.log('Data check - hasCriteria:', hasCriteria, 'hasAlternatives:', hasAlternatives, 'hasResult:', hasResult)
-        
         if (!hasCriteria && !hasAlternatives && !hasResult) {
           // File was deleted or is empty - clear all data
-          console.log('File is empty or deleted - clearing all ranking data')
           isSyncingRef.current = true
           setCriteriaWeights({})
           setRankingResult(null)
@@ -314,14 +301,20 @@ function RankingPage() {
                 const altKey = formatAlternativeKey(rowNo)
                 newScores[altKey] = {}
               })
-              console.log('Cleared alternatives, created new structure:', Object.keys(newScores))
               return newScores
             })
           } else {
             setAlternativesScores({})
-            console.log('Cleared all alternatives (no project rows)')
           }
           return
+        }
+        
+        // Load ranking columns
+        if (data.columns && Array.isArray(data.columns) && data.columns.length > 0) {
+          setRankingColumns(data.columns)
+        } else {
+          // If no columns saved, start with empty array
+          setRankingColumns([])
         }
         
         if (hasCriteria) {
@@ -458,11 +451,10 @@ function RankingPage() {
     }
   }
 
-  const updateRanking = async (newCriteriaWeights, newAlternativesScores, newRankingResult) => {
+  const updateRanking = async (newCriteriaWeights, newAlternativesScores, newRankingResult, newColumns = null) => {
     try {
-      console.log('Updating ranking with alternativesScores:', newAlternativesScores)
-      console.log('Number of alternatives:', Object.keys(newAlternativesScores).length)
-      await rankingAPI.update(newCriteriaWeights, newAlternativesScores, newRankingResult)
+      const columnsToSave = newColumns !== null ? newColumns : rankingColumns
+      await rankingAPI.update(newCriteriaWeights, newAlternativesScores, newRankingResult, columnsToSave)
       // Emit event to notify FilePage
       window.dispatchEvent(new CustomEvent('ranking-updated'))
     } catch (error) {
@@ -471,13 +463,16 @@ function RankingPage() {
   }
 
   const handleWeightChange = (column, weight) => {
+    const weightValue = parseFloat(weight) || 0
     const newWeights = {
       ...criteriaWeights,
-      [column]: parseFloat(weight) || 0
+      [column]: weightValue
     }
     setCriteriaWeights(newWeights)
-    // Auto-save
-    updateRanking(newWeights, alternativesScores, rankingResult)
+    // Auto-save only the changed cell
+    rankingAPI.updateCell('weight', '', column, weightValue).catch(error => {
+      console.error('Error updating weight:', error)
+    })
   }
 
   const handleScoreChange = (alternative, column, score) => {
@@ -490,8 +485,72 @@ function RankingPage() {
       }
     }
     setAlternativesScores(newScores)
-    // Auto-save immediately
-    updateRanking(criteriaWeights, newScores, rankingResult)
+    // Auto-save only the changed cell
+    rankingAPI.updateCell('score', alternative, column, scoreValue).catch(error => {
+      console.error('Error updating score:', error)
+    })
+  }
+
+  const handleAddColumn = () => {
+    if (!newColumnName.trim()) {
+      setMessage({ type: 'error', text: 'Please enter a column name' })
+      return
+    }
+    
+    if (rankingColumns.includes(newColumnName.trim())) {
+      setMessage({ type: 'error', text: 'Column already exists' })
+      return
+    }
+    
+    const newColumns = [...rankingColumns, newColumnName.trim()]
+    setRankingColumns(newColumns)
+    setNewColumnName('')
+    setShowAddColumnModal(false)
+    
+    // Clear weights and scores for this new column
+    const newWeights = { ...criteriaWeights }
+    newWeights[newColumnName.trim()] = 0
+    
+    const newScores = { ...alternativesScores }
+    Object.keys(newScores).forEach(alt => {
+      newScores[alt] = { ...newScores[alt], [newColumnName.trim()]: '' }
+    })
+    
+    setCriteriaWeights(newWeights)
+    setAlternativesScores(newScores)
+    
+    // Save to backend
+    updateRanking(newWeights, newScores, rankingResult, newColumns)
+    setMessage({ type: 'success', text: `Column "${newColumnName.trim()}" added successfully` })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+
+  const handleDeleteColumn = (columnToDelete) => {
+    if (!window.confirm(`Are you sure you want to delete column "${columnToDelete}"? All data in this column will be lost.`)) {
+      return
+    }
+    
+    const newColumns = rankingColumns.filter(col => col !== columnToDelete)
+    setRankingColumns(newColumns)
+    
+    // Remove from weights
+    const newWeights = { ...criteriaWeights }
+    delete newWeights[columnToDelete]
+    setCriteriaWeights(newWeights)
+    
+    // Remove from scores
+    const newScores = { ...alternativesScores }
+    Object.keys(newScores).forEach(alt => {
+      const altScores = { ...newScores[alt] }
+      delete altScores[columnToDelete]
+      newScores[alt] = altScores
+    })
+    setAlternativesScores(newScores)
+    
+    // Save to backend
+    updateRanking(newWeights, newScores, rankingResult, newColumns)
+    setMessage({ type: 'success', text: `Column "${columnToDelete}" deleted successfully` })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
 
   const handleAHP = async () => {
@@ -535,26 +594,50 @@ function RankingPage() {
           </div>
         )}
 
+        {/* Column Management */}
+        <div className="mb-6 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Ranking Columns</h3>
+          <button
+            onClick={() => setShowAddColumnModal(true)}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Add Column
+          </button>
+        </div>
+
         {/* Criteria Weights */}
         <div className="mb-6">
           <h3 className="text-lg font-semibold mb-4">Criteria Weights</h3>
-          <div className="grid grid-cols-3 gap-4">
-            {rankingColumns.map((col) => (
-              <div key={col}>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {col}
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={criteriaWeights[col] || ''}
-                  onChange={(e) => handleWeightChange(col, e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Weight"
-                />
-              </div>
-            ))}
-          </div>
+          {rankingColumns.length === 0 ? (
+            <p className="text-gray-500">No columns added. Click "Add Column" to add ranking criteria.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-4">
+              {rankingColumns.map((col) => (
+                <div key={col} className="relative">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      {col}
+                    </label>
+                    <button
+                      onClick={() => handleDeleteColumn(col)}
+                      className="text-red-500 hover:text-red-700 text-sm"
+                      title="Delete column"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={criteriaWeights[col] || ''}
+                    onChange={(e) => handleWeightChange(col, e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Weight"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Alternatives Scores */}
@@ -650,6 +733,57 @@ function RankingPage() {
           </div>
         </div>
       </div>
+
+      {/* Add Column Modal */}
+      {showAddColumnModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Add Ranking Column</h3>
+              <button
+                onClick={() => {
+                  setShowAddColumnModal(false)
+                  setNewColumnName('')
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">Enter a name for the new ranking criteria column:</p>
+            <input
+              type="text"
+              value={newColumnName}
+              onChange={(e) => setNewColumnName(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleAddColumn()
+                }
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+              placeholder="Column name (e.g., Cost, Quality, Safety)"
+              autoFocus
+            />
+            <div className="flex space-x-2">
+              <button
+                onClick={handleAddColumn}
+                className="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Add Column
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddColumnModal(false)
+                  setNewColumnName('')
+                }}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
