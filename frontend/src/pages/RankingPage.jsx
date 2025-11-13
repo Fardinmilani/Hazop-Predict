@@ -29,38 +29,6 @@ function RankingPage() {
     return parseInt(digits[0], 10)
   }
 
-  const buildScoresFromRows = (rows, baseScores) => {
-    const result = {}
-    rows.forEach((row, index) => {
-      const rowNo = row?.rowNo || index + 1
-      const altKey = formatAlternativeKey(rowNo)
-      const candidateKeys = [
-        altKey,
-        ...legacyAlternativeKeys(rowNo),
-        formatAlternativeKey(index + 1),
-        ...legacyAlternativeKeys(index + 1)
-      ]
-      let existing = {}
-      for (const key of candidateKeys) {
-        if (baseScores && baseScores[key]) {
-          existing = baseScores[key]
-          break
-        }
-      }
-      result[altKey] = existing
-    })
-    return result
-  }
-
-  // Sync alternatives with project rows - ensure we have exactly one alternative per project row
-  const syncAlternativesWithProject = () => {
-    isSyncingRef.current = true // Mark that we're syncing
-    setAlternativesScores(prevScores => {
-      const newScores = buildScoresFromRows(projectData, prevScores)
-      return newScores
-    })
-  }
-
   useEffect(() => {
     // Load data in sequence to avoid race conditions
     const loadAllData = async () => {
@@ -103,22 +71,9 @@ function RankingPage() {
       // Clear all ranking data immediately when file is deleted
       isSyncingRef.current = true
       setCriteriaWeights({})
+      setRankingColumns([])
       setRankingResult(null)
-      // Clear alternatives but keep structure from project if exists
-      const rows = await loadProjectData()
-      if (rows && rows.length > 0) {
-        const newScores = {}
-        rows.forEach(row => {
-          const rowNo = row.rowNo || 0
-          const altKey = `Row ${rowNo}`
-          newScores[altKey] = {}
-        })
-        setAlternativesScores(newScores)
-      } else {
-        setAlternativesScores({})
-      }
-      // Reload ranking data to ensure it's empty (this will verify from backend)
-      await loadRankingData(rows)
+      setAlternativesScores({})
     }
     
     // Listen for ranking updates (refresh data)
@@ -126,69 +81,6 @@ function RankingPage() {
       // Reload ranking data when updated
       const rows = await loadProjectData()
       await loadRankingData(rows)
-    }
-    
-    // Listen for project row deletion
-    const handleProjectRowDeleted = async (e) => {
-      const { deletedRowNo, newRows } = e.detail
-      
-      isSyncingRef.current = true
-      setAlternativesScores(prevScores => {
-        if (!newRows || newRows.length === 0) {
-          // All rows removed - clear alternatives but preserve columns
-          setTimeout(async () => {
-            await updateRanking(criteriaWeights, {}, rankingResult, rankingColumns)
-          }, 0)
-          return {}
-        }
-        
-        const sortedOldKeys = Object.keys(prevScores || {})
-          .filter((key) => {
-            const rowNo = extractRowNoFromKey(key)
-            return rowNo !== deletedRowNo
-          })
-          .sort((a, b) => {
-            const rowNoA = extractRowNoFromKey(a) || 0
-            const rowNoB = extractRowNoFromKey(b) || 0
-            return rowNoA - rowNoB
-          })
-        
-        const newScores = {}
-        newRows.forEach((row, index) => {
-          const newRowNo = row?.rowNo || index + 1
-          const newAltKey = formatAlternativeKey(newRowNo)
-          
-          const sourceKey = sortedOldKeys[index]
-          if (sourceKey && prevScores[sourceKey]) {
-            newScores[newAltKey] = prevScores[sourceKey]
-          } else {
-            newScores[newAltKey] = {}
-          }
-        })
-        
-        // Save updated scores while preserving columns and weights
-        setTimeout(async () => {
-          await updateRanking(criteriaWeights, newScores, rankingResult, rankingColumns)
-        }, 100)
-        
-        return newScores
-      })
-    }
-    
-    // Listen for project updates to sync alternatives with project rows
-    const handleProjectUpdate = async () => {
-      // Reload project data to get latest rows
-      const rows = await loadProjectData()
-      // Sync alternatives with project rows immediately using rowNo
-      if (rows && rows.length > 0) {
-        isSyncingRef.current = true
-        setAlternativesScores(prevScores => {
-          const newScores = buildScoresFromRows(rows, prevScores)
-          return newScores
-        })
-      } else {
-        setAlternativesScores({})
-      }
     }
     
     // Listen for visibility change to reload data when user returns to page
@@ -203,35 +95,16 @@ function RankingPage() {
     window.addEventListener('ranking-open', handleOpen)
     window.addEventListener('ranking-deleted', handleRankingDeleted)
     window.addEventListener('ranking-updated', handleRankingUpdated)
-    window.addEventListener('project-updated', handleProjectUpdate)
-    window.addEventListener('project-row-deleted', handleProjectRowDeleted)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     
     return () => {
       window.removeEventListener('ranking-open', handleOpen)
       window.removeEventListener('ranking-deleted', handleRankingDeleted)
       window.removeEventListener('ranking-updated', handleRankingUpdated)
-      window.removeEventListener('project-updated', handleProjectUpdate)
-      window.removeEventListener('project-row-deleted', handleProjectRowDeleted)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
     }
   }, [])
-
-  // Sync alternatives whenever projectData changes (after initial load)
-  useEffect(() => {
-    // Skip initial render to avoid double sync
-    if (projectData.length === 0 && Object.keys(alternativesScores).length === 0) {
-      return
-    }
-    
-    if (projectData && projectData.length > 0) {
-      syncAlternativesWithProject()
-    } else if (projectData && projectData.length === 0) {
-      // If project is empty, clear alternatives
-      setAlternativesScores({})
-    }
-  }, [projectData.length])
 
   // Auto-save when alternativesScores changes (but only if it's a user change, not a sync)
   // NOTE: This is disabled because we now use updateCell for individual cell changes
@@ -290,6 +163,7 @@ function RankingPage() {
           // File was deleted or is empty - clear all data
           isSyncingRef.current = true
           setCriteriaWeights({})
+          setRankingColumns([])
           setRankingResult(null)
           // Sync alternatives with project structure if project has rows
           const rows = currentProjectRows || projectData
@@ -324,41 +198,10 @@ function RankingPage() {
         }
         
         if (hasAlternatives) {
-          // Merge saved alternatives scores with project structure
+          // When we already have alternatives in backend, trust them as source of truth
+          // and avoid remapping/clearing scores on the frontend.
           isSyncingRef.current = true
-          setAlternativesScores(prevScores => {
-            // Use currentProjectRows if provided, otherwise use projectData state
-            const rows = currentProjectRows || projectData
-            const mergedScores = {}
-            
-            // First, create structure based on project rows using rowNo
-            rows.forEach((row, index) => {
-              const rowNo = row?.rowNo || index + 1
-              const altKey = formatAlternativeKey(rowNo)
-              const candidateKeys = [
-                ...legacyAlternativeKeys(rowNo),
-                altKey,
-                formatAlternativeKey(index + 1),
-                ...legacyAlternativeKeys(index + 1)
-              ]
-              
-              let existingScores = {}
-              for (const key of candidateKeys) {
-                if (data.alternativesScores && data.alternativesScores[key]) {
-                  existingScores = data.alternativesScores[key]
-                  break
-                }
-                if (prevScores && prevScores[key]) {
-                  existingScores = prevScores[key]
-                  break
-                }
-              }
-              
-              mergedScores[altKey] = existingScores
-            })
-            
-            return mergedScores
-          })
+          setAlternativesScores(data.alternativesScores || {})
         } else {
           // If no saved alternatives scores, sync with project structure
           const rows = currentProjectRows || projectData
