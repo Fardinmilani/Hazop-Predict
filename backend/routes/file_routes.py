@@ -90,7 +90,8 @@ def open_file():
                     ranking_data = {
                         'criteriaWeights': {},
                         'alternativesScores': {},
-                        'rankingResult': None
+                        'rankingResult': None,
+                        'columns': []
                     }
                 else:
                     try:
@@ -98,6 +99,16 @@ def open_file():
                         criteria_weights = {}
                         alternatives_scores = {}
                         ranking_result = None
+                        ranking_columns = []
+                        
+                        # Sheet 0: Ranking Columns (optional)
+                        if 'RankingColumns' in xls.sheet_names:
+                            df_columns = pd.read_excel(filepath, sheet_name='RankingColumns')
+                            for _, row in df_columns.iterrows():
+                                if 'column' in row:
+                                    col = str(row['column']).strip()
+                                    if pd.notna(col) and col:
+                                        ranking_columns.append(col)
                         
                         # Sheet 1: Criteria Weights
                         if 'CriteriaWeights' in xls.sheet_names:
@@ -109,13 +120,35 @@ def open_file():
                         # Sheet 2: Alternatives Scores
                         if 'AlternativesScores' in xls.sheet_names:
                             df_scores = pd.read_excel(filepath, sheet_name='AlternativesScores')
-                            current_alternative = None
-                            for _, row in df_scores.iterrows():
-                                if 'alternative' in row and pd.notna(row['alternative']):
-                                    current_alternative = row['alternative']
-                                    alternatives_scores[current_alternative] = {}
-                                elif current_alternative and 'criteria' in row and 'score' in row:
-                                    alternatives_scores[current_alternative][row['criteria']] = float(row['score'])
+                            # Check if it's new format (table with alternative column + criteria columns)
+                            # or old format (alternative, criteria, score columns)
+                            if 'alternative' in df_scores.columns and 'criteria' in df_scores.columns and 'score' in df_scores.columns:
+                                # Old format: 3 columns (alternative, criteria, score)
+                                for _, row in df_scores.iterrows():
+                                    if 'alternative' in row and 'criteria' in row and 'score' in row:
+                                        alt = str(row['alternative']).strip()
+                                        criteria = str(row['criteria']).strip()
+                                        score = row['score']
+                                        if pd.notna(alt) and pd.notna(criteria) and pd.notna(score):
+                                            if alt not in alternatives_scores:
+                                                alternatives_scores[alt] = {}
+                                            alternatives_scores[alt][criteria] = float(score)
+                            else:
+                                # New format: alternative column + criteria columns
+                                if 'alternative' in df_scores.columns:
+                                    # Get all criteria columns (all columns except 'alternative')
+                                    criteria_cols = [col for col in df_scores.columns if col != 'alternative']
+                                    for _, row in df_scores.iterrows():
+                                        alt = str(row['alternative']).strip()
+                                        if pd.notna(alt) and alt:
+                                            alternatives_scores[alt] = {}
+                                            for criteria in criteria_cols:
+                                                score = row[criteria]
+                                                if pd.notna(score):
+                                                    try:
+                                                        alternatives_scores[alt][criteria] = float(score)
+                                                    except (ValueError, TypeError):
+                                                        continue
                         
                         # Sheet 3: Ranking Result (optional)
                         if 'RankingResult' in xls.sheet_names:
@@ -130,13 +163,15 @@ def open_file():
                         ranking_data = {
                             'criteriaWeights': criteria_weights,
                             'alternativesScores': alternatives_scores,
-                            'rankingResult': ranking_result
+                            'rankingResult': ranking_result,
+                            'columns': ranking_columns
                         }
                     except Exception as e:
                         ranking_data = {
                             'criteriaWeights': {},
                             'alternativesScores': {},
-                            'rankingResult': None
+                            'rankingResult': None,
+                            'columns': []
                         }
                 return jsonify({
                     'success': True,
@@ -169,6 +204,17 @@ def open_file():
                     criteria_weights = {}
                     alternatives_scores = {}
                     ranking_result = None
+                    ranking_columns = []
+                    
+                    # Sheet 0: Ranking Columns (optional)
+                    if 'RankingColumns' in xls.sheet_names:
+                        file_stream.seek(0)
+                        df_columns = pd.read_excel(file_stream, sheet_name='RankingColumns')
+                        for _, row in df_columns.iterrows():
+                            if 'column' in row:
+                                col = str(row['column']).strip()
+                                if pd.notna(col) and col:
+                                    ranking_columns.append(col)
                     
                     # Sheet 1: Criteria Weights
                     if 'CriteriaWeights' in xls.sheet_names:
@@ -182,15 +228,35 @@ def open_file():
                     if 'AlternativesScores' in xls.sheet_names:
                         file_stream.seek(0)
                         df_scores = pd.read_excel(file_stream, sheet_name='AlternativesScores')
-                        for _, row in df_scores.iterrows():
-                            if 'alternative' in row and 'criteria' in row and 'score' in row:
-                                alt = str(row['alternative'])
-                                criteria = str(row['criteria'])
-                                score = row['score']
-                                if pd.notna(alt) and pd.notna(criteria) and pd.notna(score):
-                                    if alt not in alternatives_scores:
+                        # Check if it's new format (table with alternative column + criteria columns)
+                        # or old format (alternative, criteria, score columns)
+                        if 'alternative' in df_scores.columns and 'criteria' in df_scores.columns and 'score' in df_scores.columns:
+                            # Old format: 3 columns (alternative, criteria, score)
+                            for _, row in df_scores.iterrows():
+                                if 'alternative' in row and 'criteria' in row and 'score' in row:
+                                    alt = str(row['alternative']).strip()
+                                    criteria = str(row['criteria']).strip()
+                                    score = row['score']
+                                    if pd.notna(alt) and pd.notna(criteria) and pd.notna(score):
+                                        if alt not in alternatives_scores:
+                                            alternatives_scores[alt] = {}
+                                        alternatives_scores[alt][criteria] = float(score)
+                        else:
+                            # New format: alternative column + criteria columns
+                            if 'alternative' in df_scores.columns:
+                                # Get all criteria columns (all columns except 'alternative')
+                                criteria_cols = [col for col in df_scores.columns if col != 'alternative']
+                                for _, row in df_scores.iterrows():
+                                    alt = str(row['alternative']).strip()
+                                    if pd.notna(alt) and alt:
                                         alternatives_scores[alt] = {}
-                                    alternatives_scores[alt][criteria] = float(score)
+                                        for criteria in criteria_cols:
+                                            score = row[criteria]
+                                            if pd.notna(score):
+                                                try:
+                                                    alternatives_scores[alt][criteria] = float(score)
+                                                except (ValueError, TypeError):
+                                                    continue
                     
                     # Sheet 3: Ranking Result (optional)
                     if 'RankingResult' in xls.sheet_names:
@@ -206,7 +272,8 @@ def open_file():
                     content = {
                         'criteriaWeights': criteria_weights,
                         'alternativesScores': alternatives_scores,
-                        'rankingResult': ranking_result
+                        'rankingResult': ranking_result,
+                        'columns': ranking_columns
                     }
                 else:
                     # Regular Excel file - read first sheet
@@ -292,9 +359,18 @@ def save():
             criteria_weights = file_data.get('criteriaWeights', {})
             alternatives_scores = file_data.get('alternativesScores', {})
             ranking_result = file_data.get('rankingResult', None)
+            ranking_columns = file_data.get('columns', [])
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Sheet 0: Ranking Columns
+                if ranking_columns:
+                    df_columns = pd.DataFrame([
+                        {'column': col}
+                        for col in ranking_columns
+                    ])
+                    df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
+                
                 # Sheet 1: Criteria Weights
                 if criteria_weights:
                     df_weights = pd.DataFrame([
@@ -303,18 +379,42 @@ def save():
                     ])
                     df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
                 
-                # Sheet 2: Alternatives Scores
+                # Sheet 2: Alternatives Scores - New format: table with alternative column + criteria columns
                 if alternatives_scores:
-                    scores_rows = []
+                    # Get all unique criteria from all alternatives
+                    all_criteria = set()
                     for alt, scores in alternatives_scores.items():
-                        for criteria, score in scores.items():
-                            scores_rows.append({
-                                'alternative': alt,
-                                'criteria': criteria,
-                                'score': score
-                            })
+                        if scores and isinstance(scores, dict):
+                            all_criteria.update(scores.keys())
+                    
+                    # Also include criteria from ranking_columns if available
+                    if ranking_columns:
+                        all_criteria.update(ranking_columns)
+                    
+                    all_criteria = sorted(list(all_criteria))
+                    
+                    # Build table structure: alternative column + criteria columns
+                    scores_rows = []
+                    for alt in sorted(alternatives_scores.keys()):
+                        row = {'alternative': str(alt)}
+                        scores = alternatives_scores.get(alt, {})
+                        for criteria in all_criteria:
+                            score_value = scores.get(criteria, '')
+                            if score_value is not None and score_value != '':
+                                try:
+                                    row[criteria] = float(score_value)
+                                except (ValueError, TypeError):
+                                    row[criteria] = ''
+                            else:
+                                row[criteria] = ''
+                        scores_rows.append(row)
+                    
                     if scores_rows:
                         df_scores = pd.DataFrame(scores_rows)
+                        df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
+                    else:
+                        # Empty structure with alternative column
+                        df_scores = pd.DataFrame(columns=['alternative'])
                         df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
                 
                 # Sheet 3: Ranking Result

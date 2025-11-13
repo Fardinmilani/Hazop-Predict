@@ -332,7 +332,8 @@ function FilePage() {
             await rankingAPI.update(
               rankingData.criteriaWeights || {},
               rankingData.alternativesScores || {},
-              rankingData.rankingResult || null
+              rankingData.rankingResult || null,
+              rankingData.columns || []
             )
             // Then dispatch event to load in RankingPage
             window.dispatchEvent(new CustomEvent('ranking-open', { detail: rankingData }))

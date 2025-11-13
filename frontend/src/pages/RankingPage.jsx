@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { rankingAPI, projectAPI, libraryAPI } from '../utils/api'
-import { BarChart3, AlertCircle, X } from 'lucide-react'
+import { BarChart3, AlertCircle, X, RotateCcw } from 'lucide-react'
 
 function RankingPage() {
   const [projectData, setProjectData] = useState([])
@@ -581,6 +581,18 @@ function RankingPage() {
     }
   }
 
+  const handleResetResults = async () => {
+    if (!window.confirm('Are you sure you want to reset the ranking results? You can recalculate them by clicking "Calculate Ranking" again.')) {
+      return
+    }
+    
+    setRankingResult(null)
+    // Update backend to clear ranking result
+    await updateRanking(criteriaWeights, alternativesScores, null)
+    setMessage({ type: 'success', text: 'Ranking results reset successfully' })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-6">
@@ -699,7 +711,17 @@ function RankingPage() {
         {/* Results */}
         {rankingResult && (
           <div className="mt-8">
-            <h3 className="text-xl font-bold mb-4">Ranking Results</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold">Ranking Results</h3>
+              <button
+                onClick={handleResetResults}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                title="Reset ranking results"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reset Results</span>
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full bg-white border border-gray-300">
                 <thead>
