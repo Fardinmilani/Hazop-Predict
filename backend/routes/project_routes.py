@@ -73,6 +73,72 @@ def update_project():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@project_bp.route('/cell/update', methods=['POST'])
+def update_project_cell():
+    """Update a single cell in the project without sending the entire dataset"""
+    try:
+        data = request.json or {}
+        row_no = data.get('rowNo')
+        column = data.get('column')
+        value = data.get('value')
+        columns = data.get('columns', [])
+
+        if row_no is None:
+            return jsonify({'success': False, 'error': 'rowNo is required'}), 400
+        if not column:
+            return jsonify({'success': False, 'error': 'column is required'}), 400
+
+        project_rows = load_excel(PROJECT_FILE)
+        if project_rows is None:
+            project_rows = []
+
+        # If we don't have columns info, infer from existing data
+        if not columns:
+            if project_rows:
+                columns = list(project_rows[0].keys())
+            else:
+                columns = []
+
+        # Ensure the column exists in the schema
+        if column not in columns:
+            columns.append(column)
+
+        # Find the row to update
+        target_index = None
+        for idx, row in enumerate(project_rows):
+            current_row_no = row.get('rowNo') or idx + 1
+            if int(current_row_no) == int(row_no):
+                target_index = idx
+                break
+
+        if target_index is None:
+            # Row not present yet - create a new row with empty values
+            new_row = {col: '' for col in columns}
+            new_row['rowNo'] = row_no
+            target_index = len(project_rows)
+            project_rows.append(new_row)
+
+        # Update the target row
+        project_rows[target_index]['rowNo'] = row_no
+        project_rows[target_index][column] = value
+
+        # Save back to storage
+        save_excel(project_rows, PROJECT_FILE)
+
+        return jsonify({
+            'success': True,
+            'message': 'Cell updated successfully',
+            'data': {
+                'rowNo': row_no,
+                'column': column,
+                'value': value,
+                'rowData': project_rows[target_index],
+                'columns': columns
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @project_bp.route('/row/add', methods=['POST'])
 def add_row():
     """Add a new row to project"""

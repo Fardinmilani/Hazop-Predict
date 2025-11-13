@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { projectAPI, libraryAPI } from '../utils/api'
+import { projectAPI, libraryAPI, rankingAPI } from '../utils/api'
 import DataTable from '../components/DataTable'
 
 function ProjectPage() {
@@ -17,23 +17,31 @@ function ProjectPage() {
     // Listen for project events from FilePage
     const handleNew = async (e) => {
       const rows = e.detail.rows || []
-      const cols = e.detail.columns || []
-      setRows(rows)
+      const cols = (e.detail.columns || []).filter(col => col !== 'rowNo')
+      let loadedRows = rows.map((row, index) => ({
+        ...row,
+        rowNo: row.rowNo || index + 1
+      }))
+      setRows(loadedRows)
       setColumns(cols)
       // Save the new project (only if not empty)
-      if (rows.length > 0 || cols.length > 0) {
-        await updateProject(rows, cols)
+      if (loadedRows.length > 0 || cols.length > 0) {
+        await updateProject(loadedRows, cols)
       }
     }
     const handleOpen = async (e) => {
       if (Array.isArray(e.detail)) {
         // If data is array of rows
         if (e.detail.length > 0) {
-          const cols = Object.keys(e.detail[0])
+          const cols = Object.keys(e.detail[0]).filter(col => col !== 'rowNo')
+          let loadedRows = e.detail.map((row, index) => ({
+            ...row,
+            rowNo: row.rowNo || index + 1
+          }))
           setColumns(cols)
-          setRows(e.detail)
+          setRows(loadedRows)
           // Save the loaded data
-          await updateProject(e.detail, cols)
+          await updateProject(loadedRows, cols)
         } else {
           // Empty array
           setRows([])
@@ -41,12 +49,16 @@ function ProjectPage() {
         }
       } else {
         const rows = e.detail.rows || []
-        const cols = e.detail.columns || []
-        setRows(rows)
+        const cols = (e.detail.columns || []).filter(col => col !== 'rowNo')
+        let loadedRows = rows.map((row, index) => ({
+          ...row,
+          rowNo: row.rowNo || index + 1
+        }))
+        setRows(loadedRows)
         setColumns(cols)
         // Save the loaded data (only if not empty)
-        if (rows.length > 0 || cols.length > 0) {
-          await updateProject(rows, cols)
+        if (loadedRows.length > 0 || cols.length > 0) {
+          await updateProject(loadedRows, cols)
         }
       }
     }
@@ -81,26 +93,59 @@ function ProjectPage() {
       const response = await projectAPI.get()
       if (response.data.success) {
         const data = response.data.data
-        setRows(data.rows || [])
-        setColumns(data.columns || [])
+        let loadedRows = data.rows || []
+        let loadedColumns = (data.columns || []).filter(col => col !== 'rowNo')
+        
+        // Ensure all rows have rowNo - assign if missing
+        let maxRowNo = 0
+        loadedRows = loadedRows.map((row, index) => {
+          if (!row.rowNo) {
+            // Find max rowNo from existing rows
+            const existingMax = Math.max(...loadedRows.map(r => r.rowNo || 0), 0)
+            maxRowNo = Math.max(maxRowNo, existingMax, index)
+            return { ...row, rowNo: index + 1 }
+          }
+          maxRowNo = Math.max(maxRowNo, row.rowNo)
+          return row
+        })
+        
+        setRows(loadedRows)
+        setColumns(loadedColumns)
       }
     } catch (error) {
       console.error('Error loading project:', error)
     }
   }
 
-  const handleCellChange = (rowIndex, columnName, value) => {
+  const handleCellChange = async (rowIndex, columnName, value) => {
     const newRows = [...rows]
     if (!newRows[rowIndex]) {
       newRows[rowIndex] = {}
     }
     newRows[rowIndex][columnName] = value
     setRows(newRows)
-    updateProject(newRows, columns)
+
+    const rowNo = newRows[rowIndex]?.rowNo || rowIndex + 1
+
+    try {
+      await projectAPI.updateCell(rowNo, columnName, value, columns)
+      window.dispatchEvent(new CustomEvent('project-updated'))
+    } catch (error) {
+      console.error('Error updating project cell:', error)
+      setMessage({ type: 'error', text: 'Failed to update cell' })
+    }
+  }
+
+  const getNextRowNo = () => {
+    if (rows.length === 0) return 1
+    const maxRowNo = Math.max(...rows.map(row => row.rowNo || 0))
+    return maxRowNo + 1
   }
 
   const handleAddRow = () => {
-    const newRow = {}
+    const newRow = {
+      rowNo: getNextRowNo()
+    }
     columns.forEach(col => {
       newRow[col] = ''
     })
@@ -109,10 +154,78 @@ function ProjectPage() {
     updateProject(newRows, columns)
   }
 
-  const handleDeleteRow = (index) => {
-    const newRows = rows.filter((_, i) => i !== index)
+  const syncRankingWithProjectRows = async (rows, deletedRowNo = null) => {
+    try {
+      const rankResponse = await rankingAPI.get()
+      if (!rankResponse.data?.success) {
+        return
+      }
+
+      const rankingData = rankResponse.data.data || {}
+      const existingAlternatives = rankingData.alternativesScores || {}
+      let existingKeys = Object.keys(existingAlternatives).sort((a, b) => {
+        const rowNoA = parseInt((a.match(/\d+/) || [0])[0], 10)
+        const rowNoB = parseInt((b.match(/\d+/) || [0])[0], 10)
+        return rowNoA - rowNoB
+      })
+      // If a specific row was deleted, remove that key from the old list to shift up correctly
+      if (deletedRowNo) {
+        existingKeys = existingKeys.filter((key) => {
+          const num = parseInt((key.match(/\d+/) || [0])[0], 10)
+          return num !== Number(deletedRowNo)
+        })
+      }
+
+      const reorderedAlternatives = {}
+      rows.forEach((row, idx) => {
+        const rowNo = row?.rowNo || idx + 1
+        const newKey = `Alternative ${rowNo}`
+        const sourceKey = existingKeys[idx]
+        if (sourceKey && existingAlternatives[sourceKey]) {
+          reorderedAlternatives[newKey] = existingAlternatives[sourceKey]
+        } else {
+          reorderedAlternatives[newKey] = {}
+        }
+      })
+
+      await rankingAPI.update(
+        rankingData.criteriaWeights || {},
+        reorderedAlternatives,
+        null // Invalidate ranking result since data changed
+      )
+
+      // Inform other listeners that ranking data changed
+      window.dispatchEvent(new CustomEvent('ranking-updated'))
+    } catch (error) {
+      console.error('Failed to sync ranking after project update:', error)
+    }
+  }
+
+  const handleDeleteRow = async (index) => {
+    const rowToDelete = rows[index]
+    const deletedRowNo = rowToDelete?.rowNo
+    
+    // Remove the row
+    let newRows = rows.filter((_, i) => i !== index)
+    
+    // Renumber all remaining rows to maintain continuity (1, 2, 3, ...)
+    newRows = newRows.map((row, idx) => ({
+      ...row,
+      rowNo: idx + 1
+    }))
+    
     setRows(newRows)
-    updateProject(newRows, columns)
+    await updateProject(newRows, columns)
+    await syncRankingWithProjectRows(newRows, deletedRowNo)
+    
+    // Notify RankingPage to sync with new project rows
+    // Send the new rows so RankingPage can sync alternatives based on them
+    window.dispatchEvent(new CustomEvent('project-row-deleted', { 
+      detail: { 
+        deletedRowNo,
+        newRows: newRows // Send the new rows with renumbered rowNo
+      } 
+    }))
   }
 
   const updateProject = async (newRows, newColumns) => {

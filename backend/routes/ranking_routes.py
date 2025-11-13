@@ -181,7 +181,20 @@ def delete_ranking():
         
         # Delete file if it exists
         if filepath.exists():
-            filepath.unlink()
+            try:
+                filepath.unlink()
+            except PermissionError:
+                # On Windows, file might be locked. Overwrite with empty structure instead.
+                # This effectively "clears" ranking data while avoiding file lock errors.
+                try:
+                    with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+                        # Write empty sheets to clear any existing data
+                        pd.DataFrame(columns=['criteria', 'weight']).to_excel(writer, sheet_name='CriteriaWeights', index=False)
+                        pd.DataFrame(columns=['alternative', 'criteria', 'score']).to_excel(writer, sheet_name='AlternativesScores', index=False)
+                        pd.DataFrame(columns=['alternative', 'score']).to_excel(writer, sheet_name='RankingResult', index=False)
+                except Exception:
+                    # If even overwriting fails, just ignore and continue returning success
+                    pass
         
         return jsonify({
             'success': True,

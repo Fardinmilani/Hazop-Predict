@@ -49,6 +49,12 @@ export const libraryAPI = {
 export const projectAPI = {
   get: () => api.get('/project/get'),
   update: (rows, columns) => api.post('/project/update', { rows, columns }),
+  updateCell: (rowNo, column, value, columns = []) => api.post('/project/cell/update', {
+    rowNo,
+    column,
+    value,
+    columns
+  }),
   addRow: (row) => api.post('/project/row/add', { row }),
   deleteRow: (index) => api.delete('/project/row/delete', { data: { index } })
 }

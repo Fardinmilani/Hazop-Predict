@@ -18,6 +18,9 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, library
       <table className="min-w-full bg-white border border-gray-300">
         <thead>
           <tr className="bg-gray-100">
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
+              Row No
+            </th>
             {columns.map((col, idx) => (
               <th key={idx} className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
                 {col}
@@ -31,6 +34,9 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, library
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex} className="hover:bg-gray-50">
+              <td className="px-4 py-2 border-b font-medium text-gray-600">
+                {row.rowNo || rowIndex + 1}
+              </td>
               {columns.map((col, colIndex) => {
                 const options = getOptionsForColumn(col)
                 const cellValue = row[col] || ''

@@ -15,23 +15,46 @@ function RankingPage() {
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
 
+  const formatAlternativeKey = (rowNo) => `Alternative ${rowNo}`
+  const legacyAlternativeKeys = (rowNo) => [
+    `Row ${rowNo}`,
+    formatAlternativeKey(rowNo)
+  ]
+  const extractRowNoFromKey = (key) => {
+    if (!key) return null
+    const digits = key.match(/\d+/)
+    if (!digits) return null
+    return parseInt(digits[0], 10)
+  }
+
+  const buildScoresFromRows = (rows, baseScores) => {
+    const result = {}
+    rows.forEach((row, index) => {
+      const rowNo = row?.rowNo || index + 1
+      const altKey = formatAlternativeKey(rowNo)
+      const candidateKeys = [
+        altKey,
+        ...legacyAlternativeKeys(rowNo),
+        formatAlternativeKey(index + 1),
+        ...legacyAlternativeKeys(index + 1)
+      ]
+      let existing = {}
+      for (const key of candidateKeys) {
+        if (baseScores && baseScores[key]) {
+          existing = baseScores[key]
+          break
+        }
+      }
+      result[altKey] = existing
+    })
+    return result
+  }
+
   // Sync alternatives with project rows - ensure we have exactly one alternative per project row
   const syncAlternativesWithProject = () => {
     isSyncingRef.current = true // Mark that we're syncing
     setAlternativesScores(prevScores => {
-      const newScores = {}
-      const numRows = projectData.length
-      
-      // Create alternatives based on project rows
-      for (let i = 0; i < numRows; i++) {
-        const altKey = `Alternative ${i + 1}`
-        // Preserve existing scores if they exist, otherwise create empty object
-        newScores[altKey] = prevScores[altKey] || {}
-      }
-      
-      // If we have more alternatives than project rows, remove extras
-      // (This handles the case when rows are deleted from project)
-      
+      const newScores = buildScoresFromRows(projectData, prevScores)
       return newScores
     })
   }
@@ -85,10 +108,11 @@ function RankingPage() {
       console.log('Project rows after deletion:', rows?.length || 0)
       if (rows && rows.length > 0) {
         const newScores = {}
-        for (let i = 0; i < rows.length; i++) {
-          const altKey = `Alternative ${i + 1}`
+        rows.forEach(row => {
+          const rowNo = row.rowNo || 0
+          const altKey = `Row ${rowNo}`
           newScores[altKey] = {}
-        }
+        })
         setAlternativesScores(newScores)
         console.log('Cleared alternatives scores, new structure:', Object.keys(newScores))
       } else {
@@ -107,19 +131,60 @@ function RankingPage() {
       await loadRankingData(rows)
     }
     
+    // Listen for project row deletion
+    const handleProjectRowDeleted = async (e) => {
+      const { deletedRowNo, newRows } = e.detail
+      console.log('Project row deleted, rowNo:', deletedRowNo, 'New rows:', newRows)
+      
+      isSyncingRef.current = true
+      setAlternativesScores(prevScores => {
+        if (!newRows || newRows.length === 0) {
+          // All rows removed - clear alternatives
+          setTimeout(async () => {
+            await updateRanking(criteriaWeights, {}, rankingResult)
+          }, 0)
+          return {}
+        }
+        
+        const sortedOldKeys = Object.keys(prevScores || {})
+          .filter((key) => {
+            const rowNo = extractRowNoFromKey(key)
+            return rowNo !== deletedRowNo
+          })
+          .sort((a, b) => {
+            const rowNoA = extractRowNoFromKey(a) || 0
+            const rowNoB = extractRowNoFromKey(b) || 0
+            return rowNoA - rowNoB
+          })
+        
+        const newScores = {}
+        newRows.forEach((row, index) => {
+          const newRowNo = row?.rowNo || index + 1
+          const newAltKey = formatAlternativeKey(newRowNo)
+          
+          const sourceKey = sortedOldKeys[index]
+          if (sourceKey && prevScores[sourceKey]) {
+            newScores[newAltKey] = prevScores[sourceKey]
+          } else {
+            newScores[newAltKey] = {}
+          }
+        })
+        
+        console.log('Deleted alternative row', deletedRowNo, '-> new alternatives:', Object.keys(newScores))
+        
+        return newScores
+      })
+    }
+    
     // Listen for project updates to sync alternatives with project rows
     const handleProjectUpdate = async () => {
       // Reload project data to get latest rows
       const rows = await loadProjectData()
-      // Sync alternatives with project rows immediately
+      // Sync alternatives with project rows immediately using rowNo
       if (rows && rows.length > 0) {
         isSyncingRef.current = true
         setAlternativesScores(prevScores => {
-          const newScores = {}
-          for (let i = 0; i < rows.length; i++) {
-            const altKey = `Alternative ${i + 1}`
-            newScores[altKey] = prevScores[altKey] || {}
-          }
+          const newScores = buildScoresFromRows(rows, prevScores)
           return newScores
         })
       } else {
@@ -140,6 +205,7 @@ function RankingPage() {
     window.addEventListener('ranking-deleted', handleRankingDeleted)
     window.addEventListener('ranking-updated', handleRankingUpdated)
     window.addEventListener('project-updated', handleProjectUpdate)
+    window.addEventListener('project-row-deleted', handleProjectRowDeleted)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     
     return () => {
@@ -147,6 +213,7 @@ function RankingPage() {
       window.removeEventListener('ranking-deleted', handleRankingDeleted)
       window.removeEventListener('ranking-updated', handleRankingUpdated)
       window.removeEventListener('project-updated', handleProjectUpdate)
+      window.removeEventListener('project-row-deleted', handleProjectRowDeleted)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
     }
@@ -240,12 +307,13 @@ function RankingPage() {
           // Sync alternatives with project structure if project has rows
           const rows = currentProjectRows || projectData
           if (rows && rows.length > 0) {
-            setAlternativesScores(prevScores => {
+            setAlternativesScores(() => {
               const newScores = {}
-              for (let i = 0; i < rows.length; i++) {
-                const altKey = `Alternative ${i + 1}`
+              rows.forEach((row, index) => {
+                const rowNo = row?.rowNo || index + 1
+                const altKey = formatAlternativeKey(rowNo)
                 newScores[altKey] = {}
-              }
+              })
               console.log('Cleared alternatives, created new structure:', Object.keys(newScores))
               return newScores
             })
@@ -268,15 +336,33 @@ function RankingPage() {
           setAlternativesScores(prevScores => {
             // Use currentProjectRows if provided, otherwise use projectData state
             const rows = currentProjectRows || projectData
-            const numRows = rows.length
             const mergedScores = {}
             
-            // First, create structure based on project rows
-            for (let i = 0; i < numRows; i++) {
-              const altKey = `Alternative ${i + 1}`
-              // Use saved scores if they exist for this alternative, otherwise use existing or empty
-              mergedScores[altKey] = data.alternativesScores[altKey] || prevScores[altKey] || {}
-            }
+            // First, create structure based on project rows using rowNo
+            rows.forEach((row, index) => {
+              const rowNo = row?.rowNo || index + 1
+              const altKey = formatAlternativeKey(rowNo)
+              const candidateKeys = [
+                ...legacyAlternativeKeys(rowNo),
+                altKey,
+                formatAlternativeKey(index + 1),
+                ...legacyAlternativeKeys(index + 1)
+              ]
+              
+              let existingScores = {}
+              for (const key of candidateKeys) {
+                if (data.alternativesScores && data.alternativesScores[key]) {
+                  existingScores = data.alternativesScores[key]
+                  break
+                }
+                if (prevScores && prevScores[key]) {
+                  existingScores = prevScores[key]
+                  break
+                }
+              }
+              
+              mergedScores[altKey] = existingScores
+            })
             
             return mergedScores
           })
@@ -287,10 +373,24 @@ function RankingPage() {
             isSyncingRef.current = true
             setAlternativesScores(prevScores => {
               const newScores = {}
-              for (let i = 0; i < rows.length; i++) {
-                const altKey = `Alternative ${i + 1}`
-                newScores[altKey] = prevScores[altKey] || {}
-              }
+              rows.forEach((row, index) => {
+                const rowNo = row?.rowNo || index + 1
+                const altKey = formatAlternativeKey(rowNo)
+                const candidateKeys = [
+                  altKey,
+                  ...legacyAlternativeKeys(rowNo),
+                  formatAlternativeKey(index + 1),
+                  ...legacyAlternativeKeys(index + 1)
+                ]
+                let existing = {}
+                for (const key of candidateKeys) {
+                  if (prevScores && prevScores[key]) {
+                    existing = prevScores[key]
+                    break
+                  }
+                }
+                newScores[altKey] = existing
+              })
               return newScores
             })
           } else {
@@ -312,10 +412,24 @@ function RankingPage() {
           isSyncingRef.current = true
           setAlternativesScores(prevScores => {
             const newScores = {}
-            for (let i = 0; i < rows.length; i++) {
-              const altKey = `Alternative ${i + 1}`
-              newScores[altKey] = prevScores[altKey] || {}
-            }
+            rows.forEach((row, index) => {
+              const rowNo = row?.rowNo || index + 1
+              const altKey = formatAlternativeKey(rowNo)
+              const candidateKeys = [
+                altKey,
+                ...legacyAlternativeKeys(rowNo),
+                formatAlternativeKey(index + 1),
+                ...legacyAlternativeKeys(index + 1)
+              ]
+              let existing = {}
+              for (const key of candidateKeys) {
+                if (prevScores && prevScores[key]) {
+                  existing = prevScores[key]
+                  break
+                }
+              }
+              newScores[altKey] = existing
+            })
             return newScores
           })
         } else {
@@ -450,6 +564,7 @@ function RankingPage() {
             <table className="min-w-full bg-white border border-gray-300">
               <thead>
                 <tr className="bg-gray-100">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Row No</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Alternative</th>
                   {rankingColumns.map((col) => (
                     <th key={col} className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">
@@ -459,22 +574,31 @@ function RankingPage() {
                 </tr>
               </thead>
               <tbody>
-                {Object.keys(alternativesScores).map((alt) => (
-                  <tr key={alt}>
-                    <td className="px-4 py-3 border-b font-medium">{alt}</td>
-                    {rankingColumns.map((col) => (
-                      <td key={col} className="px-4 py-3 border-b">
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={alternativesScores[alt][col] || ''}
-                          onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {Object.keys(alternativesScores).sort((a, b) => {
+                  // Sort by row number
+                  const rowNoA = extractRowNoFromKey(a) || 0
+                  const rowNoB = extractRowNoFromKey(b) || 0
+                  return rowNoA - rowNoB
+                }).map((alt) => {
+                  const rowNo = extractRowNoFromKey(alt) || ''
+                  return (
+                    <tr key={alt}>
+                      <td className="px-4 py-3 border-b font-medium text-gray-600">{rowNo}</td>
+                      <td className="px-4 py-3 border-b font-medium">{alt}</td>
+                      {rankingColumns.map((col) => (
+                        <td key={col} className="px-4 py-3 border-b">
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={alternativesScores[alt][col] || ''}
+                            onChange={(e) => handleScoreChange(alt, col, e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
