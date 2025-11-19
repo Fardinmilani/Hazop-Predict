@@ -56,7 +56,8 @@ export const projectAPI = {
     columns
   }),
   addRow: (row) => api.post('/project/row/add', { row }),
-  deleteRow: (index) => api.delete('/project/row/delete', { data: { index } })
+  deleteRow: (index) => api.delete('/project/row/delete', { data: { index } }),
+  delete: () => api.post('/project/delete')
 }
 
 // Methodology API

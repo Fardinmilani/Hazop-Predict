@@ -56,8 +56,15 @@ def load_csv(filename):
         return None
     return pd.read_csv(filepath).to_dict('records')
 
-def save_excel(data, filename, sheet_name='Sheet1'):
-    """Save data as Excel file"""
+def save_excel(data, filename, sheet_name='Sheet1', mode='write'):
+    """Save data as Excel file
+    
+    Args:
+        data: Data to save (list of dicts, dict, or DataFrame)
+        filename: Name of the Excel file
+        sheet_name: Name of the sheet to save to
+        mode: 'write' to overwrite file, 'append' to preserve existing sheets
+    """
     ensure_data_dir()
     filepath = DATA_DIR / filename
     
@@ -71,8 +78,17 @@ def save_excel(data, filename, sheet_name='Sheet1'):
     else:
         df = pd.DataFrame(data)
     
-    with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
+    if mode == 'append' and filepath.exists():
+        # Load existing workbook and preserve all sheets
+        from openpyxl import load_workbook
+        book = load_workbook(filepath)
+        with pd.ExcelWriter(filepath, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            writer.book = book
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+    else:
+        # Write mode - overwrite file
+        with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
     
     return str(filepath)
 

@@ -15,6 +15,7 @@ from utils.file_manager import (
 import os
 import pandas as pd
 import io
+from openpyxl.styles import Alignment
 
 file_bp = Blueprint('file', __name__)
 
@@ -55,17 +56,33 @@ def open_file():
             
             # Handle special files (project.xlsx and library.json)
             if filename == 'project.xlsx':
-                from utils.file_manager import load_excel
-                project = load_excel('project.xlsx')
-                if project is None:
+                from pathlib import Path
+                DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+                filepath = DATA_DIR / 'project.xlsx'
+                
+                if not filepath.exists():
                     project = {'rows': [], 'columns': []}
                 else:
-                    if len(project) > 0:
-                        columns = list(project[0].keys())
-                        rows = project
-                        project = {'rows': rows, 'columns': columns}
-                    else:
+                    try:
+                        # Load project data from 'Project' or 'Sheet1' sheet
+                        try:
+                            project_df = pd.read_excel(filepath, sheet_name='Project')
+                            project_rows = project_df.to_dict('records')
+                        except:
+                            try:
+                                project_df = pd.read_excel(filepath, sheet_name='Sheet1')
+                                project_rows = project_df.to_dict('records')
+                            except:
+                                project_rows = []
+                        
+                        if len(project_rows) > 0:
+                            columns = list(project_rows[0].keys())
+                            project = {'rows': project_rows, 'columns': columns}
+                        else:
+                            project = {'rows': [], 'columns': []}
+                    except Exception as e:
                         project = {'rows': [], 'columns': []}
+                
                 return jsonify({
                     'success': True,
                     'data': project,
@@ -79,103 +96,6 @@ def open_file():
                 return jsonify({
                     'success': True,
                     'data': library,
-                    'filename': filename
-                })
-            elif filename == 'ranking.xlsx' or 'ranking' in filename.lower():
-                # Handle ranking file with multiple sheets
-                from pathlib import Path
-                DATA_DIR = Path(__file__).parent.parent.parent / 'data'
-                filepath = DATA_DIR / 'ranking.xlsx'
-                if not filepath.exists():
-                    ranking_data = {
-                        'criteriaWeights': {},
-                        'alternativesScores': {},
-                        'rankingResult': None,
-                        'columns': []
-                    }
-                else:
-                    try:
-                        xls = pd.ExcelFile(filepath)
-                        criteria_weights = {}
-                        alternatives_scores = {}
-                        ranking_result = None
-                        ranking_columns = []
-                        
-                        # Sheet 0: Ranking Columns (optional)
-                        if 'RankingColumns' in xls.sheet_names:
-                            df_columns = pd.read_excel(filepath, sheet_name='RankingColumns')
-                            for _, row in df_columns.iterrows():
-                                if 'column' in row:
-                                    col = str(row['column']).strip()
-                                    if pd.notna(col) and col:
-                                        ranking_columns.append(col)
-                        
-                        # Sheet 1: Criteria Weights
-                        if 'CriteriaWeights' in xls.sheet_names:
-                            df_weights = pd.read_excel(filepath, sheet_name='CriteriaWeights')
-                            for _, row in df_weights.iterrows():
-                                if 'criteria' in row and 'weight' in row:
-                                    criteria_weights[row['criteria']] = float(row['weight'])
-                        
-                        # Sheet 2: Alternatives Scores
-                        if 'AlternativesScores' in xls.sheet_names:
-                            df_scores = pd.read_excel(filepath, sheet_name='AlternativesScores')
-                            # Check if it's new format (table with alternative column + criteria columns)
-                            # or old format (alternative, criteria, score columns)
-                            if 'alternative' in df_scores.columns and 'criteria' in df_scores.columns and 'score' in df_scores.columns:
-                                # Old format: 3 columns (alternative, criteria, score)
-                                for _, row in df_scores.iterrows():
-                                    if 'alternative' in row and 'criteria' in row and 'score' in row:
-                                        alt = str(row['alternative']).strip()
-                                        criteria = str(row['criteria']).strip()
-                                        score = row['score']
-                                        if pd.notna(alt) and pd.notna(criteria) and pd.notna(score):
-                                            if alt not in alternatives_scores:
-                                                alternatives_scores[alt] = {}
-                                            alternatives_scores[alt][criteria] = float(score)
-                            else:
-                                # New format: alternative column + criteria columns
-                                if 'alternative' in df_scores.columns:
-                                    # Get all criteria columns (all columns except 'alternative')
-                                    criteria_cols = [col for col in df_scores.columns if col != 'alternative']
-                                    for _, row in df_scores.iterrows():
-                                        alt = str(row['alternative']).strip()
-                                        if pd.notna(alt) and alt:
-                                            alternatives_scores[alt] = {}
-                                            for criteria in criteria_cols:
-                                                score = row[criteria]
-                                                if pd.notna(score):
-                                                    try:
-                                                        alternatives_scores[alt][criteria] = float(score)
-                                                    except (ValueError, TypeError):
-                                                        continue
-                        
-                        # Sheet 3: Ranking Result (optional)
-                        if 'RankingResult' in xls.sheet_names:
-                            df_result = pd.read_excel(filepath, sheet_name='RankingResult')
-                            ranking_result = {
-                                'ranking': [
-                                    {'alternative': row['alternative'], 'score': float(row['score'])}
-                                    for _, row in df_result.iterrows()
-                                ]
-                            }
-                        
-                        ranking_data = {
-                            'criteriaWeights': criteria_weights,
-                            'alternativesScores': alternatives_scores,
-                            'rankingResult': ranking_result,
-                            'columns': ranking_columns
-                        }
-                    except Exception as e:
-                        ranking_data = {
-                            'criteriaWeights': {},
-                            'alternativesScores': {},
-                            'rankingResult': None,
-                            'columns': []
-                        }
-                return jsonify({
-                    'success': True,
-                    'data': ranking_data,
                     'filename': filename
                 })
             
@@ -194,12 +114,12 @@ def open_file():
         
         # Read file content based on extension
         if file_extension == 'xlsx':
-            # Check if it's a ranking file by checking for multiple sheets
+            # Check if it's a ranking file or project file with ranking data
             try:
                 file_stream.seek(0)
                 xls = pd.ExcelFile(file_stream)
-                # Check if it has ranking sheets
-                if 'CriteriaWeights' in xls.sheet_names or 'ranking' in file_name_lower:
+                # Check if it has ranking sheets (in project.xlsx)
+                if 'CriteriaWeights' in xls.sheet_names or 'project.xlsx' in file_name_lower:
                     # It's a ranking file
                     criteria_weights = {}
                     alternatives_scores = {}
@@ -276,9 +196,15 @@ def open_file():
                         'columns': ranking_columns
                     }
                 else:
-                    # Regular Excel file - read first sheet
+                    # Regular Excel file - read first sheet (could be Project sheet)
                     file_stream.seek(0)
-                    df = pd.read_excel(file_stream)
+                    try:
+                        # Try 'Project' sheet first
+                        df = pd.read_excel(file_stream, sheet_name='Project')
+                    except:
+                        # Fallback to first sheet
+                        file_stream.seek(0)
+                        df = pd.read_excel(file_stream)
                     content = df.to_dict('records')
             except Exception as e:
                 # Fallback to regular Excel reading
@@ -421,18 +347,208 @@ def save():
                 if ranking_result and ranking_result.get('ranking'):
                     df_result = pd.DataFrame(ranking_result['ranking'])
                     df_result.to_excel(writer, sheet_name='RankingResult', index=False)
+                
+                # Apply center alignment to all cells in all sheets
+                workbook = writer.book
+                for sheet_name in workbook.sheetnames:
+                    sheet = workbook[sheet_name]
+                    for row in sheet.iter_rows():
+                        for cell in row:
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
             
             output.seek(0)
         else:
             # Regular project data - convert to rows format
             rows = file_data.get('rows', []) if isinstance(file_data, dict) else file_data
+            columns = file_data.get('columns', []) if isinstance(file_data, dict) else []
             
-            # Create Excel file in memory
-            output = io.BytesIO()
-            df = pd.DataFrame(rows)
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Project Data')
-            output.seek(0)
+            # If saving project.xlsx, check if we should preserve ranking data
+            if filename == 'project.xlsx':
+                from pathlib import Path
+                DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+                filepath = DATA_DIR / 'project.xlsx'
+                
+                # Load existing ranking data if file exists
+                ranking_columns = []
+                criteria_weights = {}
+                alternatives_scores_df = None
+                ranking_result = None
+                
+                if filepath.exists():
+                    try:
+                        xls = pd.ExcelFile(filepath)
+                        
+                        if 'RankingColumns' in xls.sheet_names:
+                            df_columns = pd.read_excel(filepath, sheet_name='RankingColumns')
+                            ranking_columns = [
+                                str(row['column']).strip() 
+                                for _, row in df_columns.iterrows() 
+                                if 'column' in row and pd.notna(row['column'])
+                            ]
+                        
+                        if 'CriteriaWeights' in xls.sheet_names:
+                            df_weights = pd.read_excel(filepath, sheet_name='CriteriaWeights')
+                            for _, row in df_weights.iterrows():
+                                if 'criteria' in row and 'weight' in row:
+                                    try:
+                                        criteria = str(row['criteria']).strip()
+                                        weight = row['weight']
+                                        if pd.notna(criteria) and pd.notna(weight):
+                                            criteria_weights[criteria] = float(weight)
+                                    except (ValueError, TypeError):
+                                        continue
+                        
+                        if 'AlternativesScores' in xls.sheet_names:
+                            alternatives_scores_df = pd.read_excel(filepath, sheet_name='AlternativesScores')
+                        
+                        if 'RankingResult' in xls.sheet_names:
+                            ranking_result = pd.read_excel(filepath, sheet_name='RankingResult')
+                    except Exception:
+                        pass
+                
+                # Create Excel file in memory with all sheets
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    # Save project data with correct column order
+                    df = pd.DataFrame(rows)
+                    
+                    # Determine column order: rowNo first, then columns from frontend, then any remaining
+                    # Priority: 1) columns from frontend, 2) existing Excel order, 3) infer from rows
+                    if columns:
+                        # Use columns from frontend (preserve order from site)
+                        # Frontend sends columns without rowNo, so add it at the beginning
+                        col_order = ['rowNo'] + [c for c in columns if c != 'rowNo']
+                    elif filepath.exists():
+                        # Try to get order from existing Excel file
+                        try:
+                            df_existing = pd.read_excel(filepath, sheet_name='Project')
+                            existing_cols = list(df_existing.columns)
+                            if 'rowNo' in existing_cols:
+                                other_cols = [c for c in existing_cols if c != 'rowNo']
+                                col_order = ['rowNo'] + other_cols
+                            else:
+                                col_order = existing_cols
+                        except:
+                            # Fallback: infer from rows
+                            if len(rows) > 0:
+                                all_keys = list(rows[0].keys())
+                                if 'rowNo' in all_keys:
+                                    other_keys = [k for k in all_keys if k != 'rowNo']
+                                    col_order = ['rowNo'] + other_keys
+                                else:
+                                    col_order = all_keys
+                            else:
+                                col_order = None
+                    else:
+                        # No existing file, infer from rows
+                        if len(rows) > 0:
+                            all_keys = list(rows[0].keys())
+                            if 'rowNo' in all_keys:
+                                other_keys = [k for k in all_keys if k != 'rowNo']
+                                col_order = ['rowNo'] + other_keys
+                            else:
+                                col_order = all_keys
+                        else:
+                            col_order = None
+                    
+                    # Reorder DataFrame columns if order is determined
+                    if col_order:
+                        # Ensure all columns from col_order exist in df
+                        for col in col_order:
+                            if col not in df.columns:
+                                df[col] = pd.NA
+                        # Get final column order: rowNo first, then ordered columns, then any remaining
+                        final_cols = []
+                        if 'rowNo' in df.columns:
+                            final_cols.append('rowNo')
+                        for col in col_order:
+                            if col != 'rowNo' and col in df.columns:
+                                final_cols.append(col)
+                        # Add any remaining columns not in col_order
+                        for col in df.columns:
+                            if col not in final_cols:
+                                final_cols.append(col)
+                        df = df[final_cols]
+                    
+                    df.to_excel(writer, index=False, sheet_name='Project')
+                    
+                    # Preserve ranking sheets
+                    if ranking_columns:
+                        df_columns = pd.DataFrame([{'column': col} for col in ranking_columns])
+                        df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
+                    
+                    if criteria_weights:
+                        df_weights = pd.DataFrame([
+                            {'criteria': k, 'weight': v} 
+                            for k, v in criteria_weights.items()
+                        ])
+                        df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
+                    
+                    if alternatives_scores_df is not None and not alternatives_scores_df.empty:
+                        alternatives_scores_df.to_excel(writer, sheet_name='AlternativesScores', index=False)
+                    
+                    if ranking_result is not None and not ranking_result.empty:
+                        ranking_result.to_excel(writer, sheet_name='RankingResult', index=False)
+                    
+                    # Apply center alignment to all cells in all sheets
+                    workbook = writer.book
+                    for sheet_name in workbook.sheetnames:
+                        sheet = workbook[sheet_name]
+                        for row in sheet.iter_rows():
+                            for cell in row:
+                                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                output.seek(0)
+            else:
+                # Create Excel file in memory
+                output = io.BytesIO()
+                df = pd.DataFrame(rows)
+                
+                # Determine column order: rowNo first, then columns from frontend, then any remaining
+                if columns:
+                    # Use columns from frontend (preserve order from site)
+                    # Frontend sends columns without rowNo, so add it at the beginning
+                    col_order = ['rowNo'] + [c for c in columns if c != 'rowNo']
+                    # Ensure all columns from col_order exist in df
+                    for col in col_order:
+                        if col not in df.columns:
+                            df[col] = pd.NA
+                    # Get final column order: rowNo first, then ordered columns, then any remaining
+                    final_cols = []
+                    if 'rowNo' in df.columns:
+                        final_cols.append('rowNo')
+                    for col in col_order:
+                        if col != 'rowNo' and col in df.columns:
+                            final_cols.append(col)
+                    # Add any remaining columns not in col_order
+                    for col in df.columns:
+                        if col not in final_cols:
+                            final_cols.append(col)
+                    df = df[final_cols]
+                elif len(rows) > 0:
+                    # Infer from rows
+                    all_keys = list(rows[0].keys())
+                    if 'rowNo' in all_keys:
+                        other_keys = [k for k in all_keys if k != 'rowNo']
+                        col_order = ['rowNo'] + other_keys
+                        # Ensure all columns exist
+                        for col in col_order:
+                            if col not in df.columns:
+                                df[col] = pd.NA
+                        df = df[col_order]
+                
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Project Data')
+                    
+                    # Apply center alignment to all cells
+                    workbook = writer.book
+                    for sheet_name in workbook.sheetnames:
+                        sheet = workbook[sheet_name]
+                        for row in sheet.iter_rows():
+                            for cell in row:
+                                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                output.seek(0)
         
         return send_file(
             output,

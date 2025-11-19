@@ -6,20 +6,9 @@ const getSafeName = (file) => (file?.name || '').toLowerCase()
 const getSafeType = (file) => (file?.type || '').toLowerCase()
 const isProjectFile = (file) => getSafeType(file) === 'project' || getSafeName(file) === 'project.xlsx'
 const isLibraryFile = (file) => getSafeType(file) === 'library' || getSafeName(file) === 'library.json'
-const isRankingFile = (file) => {
-  const name = getSafeName(file)
-  const type = getSafeType(file)
-  if (type === 'ranking') return true
-  if (!name) return false
-  if (name === 'ranking.xlsx') return true
-  if (name.includes('ranking.xlsx')) return true
-  if (name.endsWith('.xlsx') && name.includes('ranking')) return true
-  return false
-}
 const getFileKey = (file) => {
   if (isProjectFile(file)) return 'project'
   if (isLibraryFile(file)) return 'library'
-  if (isRankingFile(file)) return 'ranking'
   return getSafeName(file)
 }
 
@@ -36,9 +25,6 @@ function FilePage() {
     }
     if (isLibraryFile(file)) {
       return { ...file, type: 'library' }
-    }
-    if (isRankingFile(file)) {
-      return { ...file, type: 'ranking' }
     }
     const safeType = getSafeType(file)
     if (safeType && safeType !== file.type) {
@@ -120,33 +106,48 @@ function FilePage() {
     try {
       let files = existingFiles.map((file) => normalizeFileEntry(file))
       // Check if project.xlsx exists and has data
+      // Also check if ranking data exists (since ranking is now part of project.xlsx)
       const projResponse = await projectAPI.get()
+      const rankResponse = await rankingAPI.get()
+      
+      let hasProjectData = false
+      let hasRankingData = false
+      
       if (projResponse.data.success) {
         const projectData = projResponse.data.data
         // Check if project has data (rows or columns)
-        if ((projectData.rows && projectData.rows.length > 0) || 
-            (projectData.columns && projectData.columns.length > 0)) {
-          const projectFile = normalizeFileEntry({
-            name: 'project.xlsx',
-            type: 'project',
-            openedAt: new Date().toISOString()
-          })
-          const existingIndex = files.findIndex(isProjectFile)
-          if (existingIndex === -1) {
-            files.push(projectFile)
-          } else {
-            // Update existing file
-            files[existingIndex] = {
-              ...files[existingIndex],
-              ...projectFile
-            }
-          }
+        hasProjectData = (projectData.rows && projectData.rows.length > 0) || 
+                        (projectData.columns && projectData.columns.length > 0)
+      }
+      
+      if (rankResponse.data && rankResponse.data.success) {
+        const rankingData = rankResponse.data.data || {}
+        // Check if ranking has any data
+        hasRankingData = (rankingData.criteriaWeights && Object.keys(rankingData.criteriaWeights).length > 0) ||
+                        (rankingData.alternativesScores && Object.keys(rankingData.alternativesScores).length > 0) ||
+                        (rankingData.rankingResult !== null && rankingData.rankingResult !== undefined) ||
+                        (rankingData.columns && rankingData.columns.length > 0)
+      }
+      
+      // Show project.xlsx if it has project data OR ranking data
+      if (hasProjectData || hasRankingData) {
+        const projectFile = normalizeFileEntry({
+          name: 'project.xlsx',
+          type: 'project',
+          openedAt: new Date().toISOString()
+        })
+        const existingIndex = files.findIndex(isProjectFile)
+        if (existingIndex === -1) {
+          files.push(projectFile)
         } else {
-          // Remove from list if no data
-          files = files.filter(f => !isProjectFile(f))
+          // Update existing file
+          files[existingIndex] = {
+            ...files[existingIndex],
+            ...projectFile
+          }
         }
       } else {
-        // Remove from list if error
+        // Remove from list if no data
         files = files.filter(f => !isProjectFile(f))
       }
 
@@ -179,40 +180,7 @@ function FilePage() {
         files = files.filter(f => !isLibraryFile(f))
       }
 
-      // Check if ranking.xlsx exists and has data
-      try {
-        const rankResponse = await rankingAPI.get()
-        if (rankResponse.data && rankResponse.data.success) {
-          const rankingData = rankResponse.data.data || {}
-          // Check if ranking has any data
-          const hasData = (rankingData.criteriaWeights && Object.keys(rankingData.criteriaWeights).length > 0) ||
-                         (rankingData.alternativesScores && Object.keys(rankingData.alternativesScores).length > 0) ||
-                         (rankingData.rankingResult !== null && rankingData.rankingResult !== undefined)
-          
-          if (hasData) {
-            const rankingFile = normalizeFileEntry({
-              name: 'ranking.xlsx',
-              type: 'ranking',
-              openedAt: new Date().toISOString()
-            })
-            const existingIndex = files.findIndex(isRankingFile)
-            if (existingIndex === -1) {
-              files.push(rankingFile)
-            } else {
-              files[existingIndex] = {
-                ...files[existingIndex],
-                ...rankingFile
-              }
-            }
-          } else {
-            files = files.filter(f => !isRankingFile(f))
-          }
-        } else {
-          files = files.filter(f => !isRankingFile(f))
-        }
-      } catch (error) {
-        files = files.filter(f => !isRankingFile(f))
-      }
+      // Ranking data is now part of project.xlsx, no separate file needed
 
       // Update active files
       updateActiveFiles(files)
@@ -563,11 +531,11 @@ function FilePage() {
             }
           }
         } else if (dataType === 'ranking') {
-          // Save ranking as Excel
+          // Ranking data is now part of project.xlsx, so save as project.xlsx
           if ('showSaveFilePicker' in window) {
             try {
               const fileHandle = await window.showSaveFilePicker({
-                suggestedName: 'ranking.xlsx',
+                suggestedName: 'project.xlsx',
                 types: [{
                   description: 'Excel files',
                   accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
@@ -606,7 +574,7 @@ function FilePage() {
             }
           } else {
             // Fallback: use download
-            const filename = prompt('Enter filename (without extension):', 'ranking')
+            const filename = prompt('Enter filename (without extension):', 'project')
             if (!filename) {
               setLoading(false)
               return
@@ -657,8 +625,7 @@ function FilePage() {
   const handleRemoveFromList = async (file) => {
     const isProject = isProjectFile(file)
     const isLibrary = isLibraryFile(file)
-    const isRanking = isRankingFile(file)
-    const displayType = file.type || (isProject ? 'project' : isLibrary ? 'library' : isRanking ? 'ranking' : 'unknown')
+    const displayType = file.type || (isProject ? 'project' : isLibrary ? 'library' : 'unknown')
 
     // Show confirmation dialog
     const confirmMessage = `Warning: This file will be permanently deleted from the application.\n\nPlease make sure you have saved a backup copy of this file before proceeding.\n\nFile: ${file.name}\nType: ${displayType}\n\nAre you sure you want to delete this file?`
@@ -671,29 +638,19 @@ function FilePage() {
     try {
       // Delete from backend based on file type
       if (isProject) {
-        await projectAPI.update([], [])
+        // Use dedicated delete endpoint to remove entire project.xlsx file
+        await projectAPI.delete()
         setMessage({ type: 'success', text: 'Project file removed and data cleared' })
       } else if (isLibrary) {
         await libraryAPI.save({ headers: [] })
         setMessage({ type: 'success', text: 'Library file removed and data cleared' })
-      } else if (isRanking) {
-        try {
-          await rankingAPI.delete()
-          setMessage({ type: 'success', text: 'Ranking file removed and data cleared' })
-        } catch (error) {
-          console.error('Error deleting ranking file:', error)
-          setMessage({ type: 'error', text: 'Failed to delete ranking data from backend. Removed from list only.' })
-        }
-        
-        // Emit event to clear data in RankingPage
-        window.dispatchEvent(new CustomEvent('ranking-deleted'))
       }
+      // Note: Ranking data is now part of project.xlsx, so deleting project will also clear ranking data
 
       // Remove from active files list
       const updated = activeFiles.filter((f) => {
         if (isProject) return !isProjectFile(f)
         if (isLibrary) return !isLibraryFile(f)
-        if (isRanking) return !isRankingFile(f)
         return getFileKey(f) !== getFileKey(file)
       })
       updateActiveFiles(updated)
@@ -705,9 +662,8 @@ function FilePage() {
         window.dispatchEvent(new CustomEvent('project-updated'))
       } else if (isLibrary) {
         window.dispatchEvent(new CustomEvent('library-updated'))
-      } else if (isRanking) {
-        window.dispatchEvent(new CustomEvent('ranking-updated'))
       }
+      // Note: Ranking data is now part of project.xlsx, so project-updated event will handle ranking updates
       
       // Refresh the active files list to remove deleted files
       setTimeout(() => {
