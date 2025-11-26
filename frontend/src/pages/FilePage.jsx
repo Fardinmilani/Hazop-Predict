@@ -224,7 +224,7 @@ function FilePage() {
         if (response.data.success) {
           setMessage({ type: 'success', text: 'New project created' })
           window.dispatchEvent(new CustomEvent('project-new', { detail: response.data.data }))
-          addActiveFile('New Project', 'project')
+          addActiveFile('project.xlsx', 'project')
         }
       } else if (type === 'library') {
         // Create new library

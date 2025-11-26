@@ -127,12 +127,17 @@ function ProjectPage() {
       newRows[rowIndex] = {}
     }
     newRows[rowIndex][columnName] = value
+    // Ensure rowNo exists
+    if (!newRows[rowIndex].rowNo) {
+      newRows[rowIndex].rowNo = rowIndex + 1
+    }
     setRows(newRows)
 
     const rowNo = newRows[rowIndex]?.rowNo || rowIndex + 1
 
     try {
-      await projectAPI.updateCell(rowNo, columnName, value, columns)
+      // Update the full project to ensure all data is saved
+      await updateProject(newRows, columns)
       window.dispatchEvent(new CustomEvent('project-updated'))
     } catch (error) {
       console.error('Error updating project cell:', error)

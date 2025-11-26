@@ -530,14 +530,27 @@ def update_project_cell():
 
         if target_index is None:
             # Row not present yet - create a new row with empty values
-            new_row = {col: '' for col in columns}
-            new_row['rowNo'] = row_no
+            new_row = {'rowNo': row_no}
+            # Add all columns with empty values
+            for col in columns:
+                new_row[col] = ''
             target_index = len(project_rows)
             project_rows.append(new_row)
 
-        # Update the target row
+        # Update the target row - ensure rowNo exists
         project_rows[target_index]['rowNo'] = row_no
+        # Ensure the column exists in the row
+        if column not in project_rows[target_index]:
+            project_rows[target_index][column] = ''
         project_rows[target_index][column] = value
+        
+        # Ensure all columns exist in all rows for consistency
+        for idx, row in enumerate(project_rows):
+            if 'rowNo' not in row:
+                row['rowNo'] = row.get('rowNo') or (idx + 1)
+            for col in columns:
+                if col not in row:
+                    row[col] = ''
 
         # Save back to storage - preserve ranking sheets and column order
         save_project_with_ranking(project_rows, columns, PROJECT_FILE)

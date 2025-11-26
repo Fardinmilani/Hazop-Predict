@@ -182,12 +182,14 @@ function RankingPage() {
       // Sync alternatives with project rows immediately using rowNo
       if (rows && rows.length > 0) {
         isSyncingRef.current = true
-        setAlternativesScores(prevScores => {
-          const newScores = buildScoresFromRows(rows, prevScores)
-          return newScores
-        })
+        const newScores = buildScoresFromRows(rows, alternativesScores)
+        setAlternativesScores(newScores)
+        // Save the synced alternatives to backend
+        await updateRanking(criteriaWeights, newScores, rankingResult, rankingColumns)
+        isSyncingRef.current = false
       } else {
         setAlternativesScores({})
+        await updateRanking(criteriaWeights, {}, rankingResult, rankingColumns)
       }
     }
     
