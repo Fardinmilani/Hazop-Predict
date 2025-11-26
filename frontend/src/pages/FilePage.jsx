@@ -269,21 +269,55 @@ function FilePage() {
         // Determine file type based on content or extension
         const fileExt = file.name.split('.').pop().toLowerCase()
         const fileName = file.name.toLowerCase()
+        const hasProjectData = result.data.rows && result.data.columns
+        const hasRankingData = result.data.criteriaWeights || result.data.alternativesScores || result.data.rankingResult
+        const hasLibraryData = result.data.headers && !hasProjectData
+        
         let fileType = 'project'
-        if (fileExt === 'json' || (result.data.headers && !result.data.rows)) {
+        if (fileExt === 'json' || hasLibraryData) {
           fileType = 'library'
-        } else if (fileName.includes('ranking') || (result.data.criteriaWeights || result.data.alternativesScores)) {
+        } else if (fileName.includes('ranking') && !hasProjectData && hasRankingData) {
+          // Only treat as ranking if it doesn't have project data
+          // If it has both project and ranking data, treat as project
           fileType = 'ranking'
         }
         
         // If it's a project file, save it to backend and dispatch event
         if (fileType === 'project') {
           const projectData = result.data
+          // Check if it has both project and ranking data
+          const hasProjectData = projectData.rows && projectData.columns
+          const hasRankingData = projectData.criteriaWeights || projectData.alternativesScores || projectData.rankingResult
+          
           // Save to backend first
           try {
-            await projectAPI.update(projectData.rows || [], projectData.columns || [])
-            // Then dispatch event to load in ProjectPage
-            window.dispatchEvent(new CustomEvent('project-open', { detail: projectData }))
+            // Save project data if available
+            if (hasProjectData) {
+              await projectAPI.update(projectData.rows || [], projectData.columns || [])
+              // Dispatch event to load in ProjectPage
+              window.dispatchEvent(new CustomEvent('project-open', { detail: {
+                rows: projectData.rows,
+                columns: projectData.columns
+              } }))
+            }
+            
+            // Save ranking data if available
+            if (hasRankingData) {
+              await rankingAPI.update(
+                projectData.criteriaWeights || {},
+                projectData.alternativesScores || {},
+                projectData.rankingResult || null,
+                projectData.rankingColumns || projectData.columns || []
+              )
+              // Dispatch event to load in RankingPage
+              window.dispatchEvent(new CustomEvent('ranking-open', { detail: {
+                criteriaWeights: projectData.criteriaWeights || {},
+                alternativesScores: projectData.alternativesScores || {},
+                rankingResult: projectData.rankingResult || null,
+                columns: projectData.rankingColumns || projectData.columns || []
+              } }))
+            }
+            
             // Add to active files
             addActiveFile(file.name, fileType)
             // Notify that file was opened

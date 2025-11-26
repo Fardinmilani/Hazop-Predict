@@ -118,9 +118,40 @@ def open_file():
             try:
                 file_stream.seek(0)
                 xls = pd.ExcelFile(file_stream)
-                # Check if it has ranking sheets (in project.xlsx)
-                if 'CriteriaWeights' in xls.sheet_names or 'project.xlsx' in file_name_lower:
-                    # It's a ranking file
+                
+                # Initialize project data
+                project_rows = []
+                project_columns = []
+                
+                # Try to load project data from 'Project' sheet or first sheet
+                if 'Project' in xls.sheet_names:
+                    file_stream.seek(0)
+                    try:
+                        project_df = pd.read_excel(file_stream, sheet_name='Project')
+                        project_rows = project_df.to_dict('records')
+                        if len(project_rows) > 0:
+                            project_columns = [col for col in list(project_rows[0].keys()) if col != 'rowNo']
+                    except:
+                        pass
+                elif len(xls.sheet_names) > 0:
+                    # Try first sheet if 'Project' sheet doesn't exist
+                    # But only if it's not a ranking sheet
+                    first_sheet = xls.sheet_names[0]
+                    if first_sheet not in ['RankingColumns', 'CriteriaWeights', 'AlternativesScores', 'RankingResult']:
+                        file_stream.seek(0)
+                        try:
+                            project_df = pd.read_excel(file_stream, sheet_name=first_sheet)
+                            project_rows = project_df.to_dict('records')
+                            if len(project_rows) > 0:
+                                project_columns = [col for col in list(project_rows[0].keys()) if col != 'rowNo']
+                        except:
+                            pass
+                
+                # Check if it has ranking sheets
+                has_ranking_sheets = 'CriteriaWeights' in xls.sheet_names or 'AlternativesScores' in xls.sheet_names
+                
+                if has_ranking_sheets or 'project.xlsx' in file_name_lower:
+                    # It has ranking data - load ranking sheets
                     criteria_weights = {}
                     alternatives_scores = {}
                     ranking_result = None
@@ -189,12 +220,25 @@ def open_file():
                             ]
                         }
                     
-                    content = {
-                        'criteriaWeights': criteria_weights,
-                        'alternativesScores': alternatives_scores,
-                        'rankingResult': ranking_result,
-                        'columns': ranking_columns
-                    }
+                    # Combine project and ranking data
+                    if project_rows and len(project_rows) > 0:
+                        # Has both project and ranking data
+                        content = {
+                            'rows': project_rows,
+                            'columns': project_columns,
+                            'criteriaWeights': criteria_weights,
+                            'alternativesScores': alternatives_scores,
+                            'rankingResult': ranking_result,
+                            'rankingColumns': ranking_columns
+                        }
+                    else:
+                        # Only ranking data
+                        content = {
+                            'criteriaWeights': criteria_weights,
+                            'alternativesScores': alternatives_scores,
+                            'rankingResult': ranking_result,
+                            'columns': ranking_columns
+                        }
                 else:
                     # Regular Excel file - read first sheet (could be Project sheet)
                     file_stream.seek(0)
