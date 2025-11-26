@@ -1,6 +1,6 @@
 import React from 'react'
 
-function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, library }) {
+function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDeleteColumn, library }) {
   const getOptionsForColumn = (columnName) => {
     if (!library || !library.headers) return []
     const header = library.headers.find(h => h.name === columnName)
@@ -23,7 +23,18 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, library
             </th>
             {columns.map((col, idx) => (
               <th key={idx} className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
-                {col}
+                <div className="flex items-center justify-between">
+                  <span>{col}</span>
+                  {onDeleteColumn && (
+                    <button
+                      onClick={() => onDeleteColumn(col)}
+                      className="ml-2 text-red-500 hover:text-red-700 text-sm font-bold"
+                      title="Delete column"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </th>
             ))}
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">

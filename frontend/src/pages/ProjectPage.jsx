@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { projectAPI, libraryAPI, rankingAPI } from '../utils/api'
 import DataTable from '../components/DataTable'
+import { AlertCircle, X } from 'lucide-react'
 
 function ProjectPage() {
   const [rows, setRows] = useState([])
@@ -9,6 +10,9 @@ function ProjectPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
   const [showColumnModal, setShowColumnModal] = useState(false)
+  const [showDeleteColumnModal, setShowDeleteColumnModal] = useState(false)
+  const [columnToDelete, setColumnToDelete] = useState(null)
+  const [columnHasData, setColumnHasData] = useState(false)
 
   useEffect(() => {
     loadLibrary()
@@ -281,6 +285,53 @@ function ProjectPage() {
       .filter(name => !columns.includes(name))
   }
 
+  const checkColumnHasData = (columnName) => {
+    // Check if any row has data in this column
+    return rows.some(row => {
+      const value = row[columnName]
+      return value !== undefined && value !== null && value !== ''
+    })
+  }
+
+  const handleDeleteColumnClick = (columnName) => {
+    const hasData = checkColumnHasData(columnName)
+    setColumnToDelete(columnName)
+    setColumnHasData(hasData)
+    setShowDeleteColumnModal(true)
+  }
+
+  const handleDeleteColumnConfirm = async () => {
+    if (!columnToDelete) return
+    
+    const newColumns = columns.filter(col => col !== columnToDelete)
+    setColumns(newColumns)
+    
+    // Remove column data from all rows
+    const newRows = rows.map(row => {
+      const newRow = { ...row }
+      delete newRow[columnToDelete]
+      return newRow
+    })
+    setRows(newRows)
+    
+    // Update project
+    await updateProject(newRows, newColumns)
+    
+    setMessage({ type: 'success', text: `Column "${columnToDelete}" deleted successfully` })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+    
+    // Close modal
+    setShowDeleteColumnModal(false)
+    setColumnToDelete(null)
+    setColumnHasData(false)
+  }
+
+  const handleDeleteColumnCancel = () => {
+    setShowDeleteColumnModal(false)
+    setColumnToDelete(null)
+    setColumnHasData(false)
+  }
+
   const availableColumns = getAvailableColumns()
 
   return (
@@ -325,6 +376,7 @@ function ProjectPage() {
             onCellChange={handleCellChange}
             onAddRow={handleAddRow}
             onDeleteRow={handleDeleteRow}
+            onDeleteColumn={handleDeleteColumnClick}
             library={library}
           />
         )}
@@ -375,6 +427,61 @@ function ProjectPage() {
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Column Modal */}
+      {showDeleteColumnModal && columnToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Delete Column</h3>
+              <button
+                onClick={handleDeleteColumnCancel}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {columnHasData ? (
+              <>
+                <div className="flex items-start space-x-3 mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-yellow-800 font-medium mb-2">
+                      Warning: This column contains data!
+                    </p>
+                    <p className="text-sm text-yellow-700">
+                      Deleting column <strong>"{columnToDelete}"</strong> will permanently remove all data in this column from all rows.
+                    </p>
+                    <p className="text-sm text-yellow-700 mt-2">
+                      This action cannot be undone. Are you sure you want to continue?
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to delete column <strong>"{columnToDelete}"</strong>?
+              </p>
+            )}
+            
+            <div className="flex space-x-2">
+              <button
+                onClick={handleDeleteColumnConfirm}
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                {columnHasData ? 'Delete Anyway' : 'Delete'}
+              </button>
+              <button
+                onClick={handleDeleteColumnCancel}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
