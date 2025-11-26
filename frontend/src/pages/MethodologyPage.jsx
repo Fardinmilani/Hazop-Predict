@@ -12,9 +12,11 @@ function MethodologyPage() {
   const [predictionInput, setPredictionInput] = useState({})
   const [predictionResult, setPredictionResult] = useState(null)
   const [selectedModel, setSelectedModel] = useState('')
+  const [library, setLibrary] = useState({ headers: [] })
 
   useEffect(() => {
     loadProjectData()
+    loadLibrary()
   }, [])
 
   const loadProjectData = async () => {
@@ -29,6 +31,33 @@ function MethodologyPage() {
     } catch (error) {
       console.error('Error loading project:', error)
     }
+  }
+
+  const loadLibrary = async () => {
+    try {
+      const response = await libraryAPI.get()
+      if (response.data.success) {
+        setLibrary(response.data.data)
+      }
+    } catch (error) {
+      console.error('Error loading library:', error)
+    }
+  }
+
+  const getOptionsForColumn = (columnName) => {
+    if (!library || !library.headers) return []
+    const header = library.headers.find(h => h.name === columnName)
+    return header ? (header.options || []) : []
+  }
+
+  const getColumnType = (columnName) => {
+    if (!library || !library.headers) return 'text'
+    const header = library.headers.find(h => h.name === columnName)
+    if (!header) return 'text'
+    // If has options, it's select type
+    if (header.options && header.options.length > 0) return 'select'
+    // Otherwise use the type field or default to text
+    return header.type || 'text'
   }
 
   const handleTrain = async () => {
@@ -225,20 +254,57 @@ function MethodologyPage() {
                   Input Values
                 </label>
                 <div className="grid grid-cols-2 gap-4">
-                  {selectedFeatures.map((col) => (
-                    <div key={col}>
-                      <label className="block text-xs text-gray-600 mb-1">{col}</label>
-                      <input
-                        type="text"
-                        value={predictionInput[col] || ''}
-                        onChange={(e) => setPredictionInput({
-                          ...predictionInput,
-                          [col]: e.target.value
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  ))}
+                  {selectedFeatures.map((col) => {
+                    const options = getOptionsForColumn(col)
+                    const columnType = getColumnType(col)
+                    const hasOptions = options.length > 0
+                    
+                    return (
+                      <div key={col}>
+                        <label className="block text-xs text-gray-600 mb-1">{col}</label>
+                        {hasOptions ? (
+                          <select
+                            value={predictionInput[col] || ''}
+                            onChange={(e) => setPredictionInput({
+                              ...predictionInput,
+                              [col]: e.target.value
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select...</option>
+                            {options.map((opt, idx) => (
+                              <option key={idx} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        ) : columnType === 'number' ? (
+                          <input
+                            type="number"
+                            step="any"
+                            value={predictionInput[col] || ''}
+                            onChange={(e) => setPredictionInput({
+                              ...predictionInput,
+                              [col]: e.target.value
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Enter number..."
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={predictionInput[col] || ''}
+                            onChange={(e) => setPredictionInput({
+                              ...predictionInput,
+                              [col]: e.target.value
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Enter value..."
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 

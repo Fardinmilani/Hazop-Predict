@@ -41,16 +41,16 @@ def train():
                 serializable_results[name] = result
             else:
                 serializable_results[name] = {
-                    'train_r2': result['train_r2'],
-                    'test_r2': result['test_r2'],
-                    'train_mae': result['train_mae'],
-                    'test_mae': result['test_mae'],
-                    'train_rmse': result['train_rmse'],
-                    'test_rmse': result['test_rmse'],
-                    'cv_mean': result['cv_mean'],
-                    'cv_std': result['cv_std'],
-                    'overfitting_score': result['overfitting_score'],
-                    'is_overfitting': result['is_overfitting']
+                    'train_r2': float(result['train_r2']) if result.get('train_r2') is not None else None,
+                    'test_r2': float(result['test_r2']) if result.get('test_r2') is not None else None,
+                    'train_mae': float(result['train_mae']) if result.get('train_mae') is not None else None,
+                    'test_mae': float(result['test_mae']) if result.get('test_mae') is not None else None,
+                    'train_rmse': float(result['train_rmse']) if result.get('train_rmse') is not None else None,
+                    'test_rmse': float(result['test_rmse']) if result.get('test_rmse') is not None else None,
+                    'cv_mean': float(result['cv_mean']) if result.get('cv_mean') is not None else None,
+                    'cv_std': float(result['cv_std']) if result.get('cv_std') is not None else None,
+                    'overfitting_score': float(result['overfitting_score']) if result.get('overfitting_score') is not None else None,
+                    'is_overfitting': bool(result['is_overfitting']) if result.get('is_overfitting') is not None else False
                 }
                 # Store model for prediction (in production, use proper serialization)
                 model_key = f"{name}_{len(trained_models)}"

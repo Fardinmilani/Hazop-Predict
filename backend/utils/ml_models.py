@@ -105,7 +105,7 @@ def train_models(X, y, test_size=0.2):
                 'cv_mean': float(cv_scores.mean()),
                 'cv_std': float(cv_scores.std()),
                 'overfitting_score': float(overfitting_score),
-                'is_overfitting': overfitting_score > 0.1
+                'is_overfitting': bool(overfitting_score > 0.1)  # Convert numpy bool_ to Python bool
             }
         except Exception as e:
             results[name] = {
