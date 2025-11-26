@@ -62,8 +62,8 @@ export const projectAPI = {
 
 // Methodology API
 export const methodologyAPI = {
-  train: (data, featureColumns, targetColumn) => 
-    api.post('/methodology/train', { data, featureColumns, targetColumn }),
+  train: (data, featureColumns, targetColumn, targetType = 'number') => 
+    api.post('/methodology/train', { data, featureColumns, targetColumn, targetType }),
   predict: (modelKey, inputData) => 
     api.post('/methodology/predict', { modelKey, inputData })
 }

@@ -71,12 +71,16 @@ function MethodologyPage() {
       return
     }
 
+    // Get target column type from library
+    const targetType = getColumnType(selectedTarget)
+
     setLoading(true)
     try {
       const response = await methodologyAPI.train(
         projectData,
         selectedFeatures,
-        selectedTarget
+        selectedTarget,
+        targetType
       )
       if (response.data.success) {
         setResults(response.data.results)
@@ -179,50 +183,104 @@ function MethodologyPage() {
         </div>
 
         {/* Results Table */}
-        {results && (
-          <div className="mt-8">
-            <h3 className="text-xl font-bold mb-4">Model Comparison</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white border border-gray-300">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Model</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Train R²</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Test R²</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Test MAE</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">CV Score</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Overfitting</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(results).map(([name, result]) => (
-                    result.error ? (
-                      <tr key={name}>
-                        <td className="px-4 py-3 border-b">{name}</td>
-                        <td colSpan="5" className="px-4 py-3 border-b text-red-500">{result.error}</td>
-                      </tr>
-                    ) : (
-                      <tr key={name} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 border-b font-medium">{name}</td>
-                        <td className="px-4 py-3 border-b">{result.train_r2.toFixed(4)}</td>
-                        <td className="px-4 py-3 border-b">{result.test_r2.toFixed(4)}</td>
-                        <td className="px-4 py-3 border-b">{result.test_mae.toFixed(4)}</td>
-                        <td className="px-4 py-3 border-b">{result.cv_mean.toFixed(4)} ± {result.cv_std.toFixed(4)}</td>
-                        <td className="px-4 py-3 border-b">
-                          <span className={`px-2 py-1 rounded text-xs ${
-                            result.is_overfitting ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                          }`}>
-                            {result.is_overfitting ? 'Yes' : 'No'}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  ))}
-                </tbody>
-              </table>
+        {results && (() => {
+          // Check if any result is classification
+          const firstResult = Object.values(results).find(r => !r.error)
+          const isClassification = firstResult?.is_classification || false
+          
+          return (
+            <div className="mt-8">
+              <h3 className="text-xl font-bold mb-4">
+                Model Comparison ({isClassification ? 'Classification' : 'Regression'})
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-300">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Model</th>
+                      {isClassification ? (
+                        <>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Train Accuracy</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Test Accuracy</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Test F1</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">CV Score</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Overfitting</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Train R²</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Test R²</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Test MAE</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">CV Score</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Overfitting</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(results).map(([name, result]) => (
+                      result.error ? (
+                        <tr key={name}>
+                          <td className="px-4 py-3 border-b">{name}</td>
+                          <td colSpan="5" className="px-4 py-3 border-b text-red-500">{result.error}</td>
+                        </tr>
+                      ) : isClassification ? (
+                        <tr key={name} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 border-b font-medium">{name}</td>
+                          <td className="px-4 py-3 border-b">{(result.train_accuracy * 100).toFixed(2)}%</td>
+                          <td className="px-4 py-3 border-b">{(result.test_accuracy * 100).toFixed(2)}%</td>
+                          <td className="px-4 py-3 border-b">{result.test_f1.toFixed(4)}</td>
+                          <td className="px-4 py-3 border-b">
+                            {result.cv_mean !== null && result.cv_mean !== undefined ? (
+                              `${(result.cv_mean * 100).toFixed(2)}% ± ${result.cv_std !== null && result.cv_std !== undefined ? (result.cv_std * 100).toFixed(2) : 'N/A'}%`
+                            ) : (
+                              'N/A (insufficient data)'
+                            )}
+                          </td>
+                          <td className="px-4 py-3 border-b">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              result.is_overfitting ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                            }`}>
+                              {result.is_overfitting ? 'Yes' : 'No'}
+                            </span>
+                          </td>
+                        </tr>
+                      ) : (
+                        <tr key={name} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 border-b font-medium">{name}</td>
+                          <td className="px-4 py-3 border-b">{result.train_r2.toFixed(4)}</td>
+                          <td className={`px-4 py-3 border-b ${result.test_r2 < 0 ? 'text-orange-600 font-semibold' : ''}`}>
+                            {result.test_r2.toFixed(4)}
+                          </td>
+                          <td className="px-4 py-3 border-b">{result.test_mae.toFixed(4)}</td>
+                          <td className="px-4 py-3 border-b">
+                            {result.cv_mean !== null && result.cv_mean !== undefined ? (
+                              `${result.cv_mean.toFixed(4)} ± ${result.cv_std !== null && result.cv_std !== undefined ? result.cv_std.toFixed(4) : 'N/A'}`
+                            ) : (
+                              'N/A (insufficient data)'
+                            )}
+                          </td>
+                          <td className="px-4 py-3 border-b">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              result.is_overfitting ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                            }`}>
+                              {result.is_overfitting ? 'Yes' : 'No'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!isClassification && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                  <strong>Note:</strong> Test R² can be negative when the model performs worse than simply predicting the mean of the target on the test set. This is mathematically valid and indicates the model needs improvement (e.g., more features, different model type, or more training data).
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Prediction Section */}
         {results && (
@@ -320,7 +378,9 @@ function MethodologyPage() {
               {predictionResult !== null && (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded">
                   <p className="text-sm font-medium text-blue-800">Prediction Result:</p>
-                  <p className="text-2xl font-bold text-blue-900">{predictionResult.toFixed(4)}</p>
+                  <p className="text-2xl font-bold text-blue-900">
+                    {typeof predictionResult === 'string' ? predictionResult : predictionResult.toFixed(4)}
+                  </p>
                 </div>
               )}
             </div>
