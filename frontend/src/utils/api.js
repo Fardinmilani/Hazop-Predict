@@ -40,8 +40,8 @@ export const fileAPI = {
 export const libraryAPI = {
   get: () => api.get('/library/get'),
   save: (data) => api.post('/library/save', { data }),
-  addHeader: (name, options) => api.post('/library/header/add', { name, options }),
-  updateHeader: (name, newName, options) => api.put('/library/header/update', { name, newName, options }),
+  addHeader: (name, options, type = 'text') => api.post('/library/header/add', { name, options, type }),
+  updateHeader: (name, newName, options, type = 'text') => api.put('/library/header/update', { name, newName, options, type }),
   deleteHeader: (name) => api.delete('/library/header/delete', { data: { name } })
 }
 

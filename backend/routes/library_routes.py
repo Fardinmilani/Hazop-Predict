@@ -19,6 +19,17 @@ def get_library():
     library = load_json(LIBRARY_FILE)
     if library is None:
         library = {'headers': []}
+    
+    # Add backward compatibility: ensure all headers have 'type' field
+    if 'headers' in library:
+        for header in library['headers']:
+            if 'type' not in header:
+                # Auto-detect type: if has options, it's select, otherwise text
+                if header.get('options') and len(header.get('options', [])) > 0:
+                    header['type'] = 'select'
+                else:
+                    header['type'] = 'text'
+    
     return jsonify({
         'success': True,
         'data': library
@@ -53,6 +64,11 @@ def add_header():
     data = request.json
     header_name = data.get('name')
     options = data.get('options', [])
+    header_type = data.get('type', 'text')
+    
+    # Auto-set type to 'select' if options exist
+    if options and len(options) > 0:
+        header_type = 'select'
     
     library = load_json(LIBRARY_FILE)
     if library is None:
@@ -65,7 +81,8 @@ def add_header():
     
     library['headers'].append({
         'name': header_name,
-        'options': options
+        'options': options,
+        'type': header_type
     })
     
     try:
@@ -85,6 +102,11 @@ def update_header():
     header_name = data.get('name')
     new_name = data.get('newName', header_name)
     options = data.get('options', [])
+    header_type = data.get('type', 'text')
+    
+    # Auto-set type to 'select' if options exist
+    if options and len(options) > 0:
+        header_type = 'select'
     
     library = load_json(LIBRARY_FILE)
     if library is None:
@@ -96,6 +118,7 @@ def update_header():
         if header['name'] == header_name:
             header['name'] = new_name
             header['options'] = options
+            header['type'] = header_type
             found = True
             break
     

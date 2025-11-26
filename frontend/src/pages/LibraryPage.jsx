@@ -6,9 +6,9 @@ function LibraryPage() {
   const [library, setLibrary] = useState({ headers: [] })
   const [loading, setLoading] = useState(false)
   const [editingIndex, setEditingIndex] = useState(null)
-  const [editingHeader, setEditingHeader] = useState({ name: '', options: [] })
+  const [editingHeader, setEditingHeader] = useState({ name: '', options: [], type: 'text' })
   const [editingOption, setEditingOption] = useState('')
-  const [newHeader, setNewHeader] = useState({ name: '', options: [] })
+  const [newHeader, setNewHeader] = useState({ name: '', options: [], type: 'text' })
   const [newOption, setNewOption] = useState('')
   const [message, setMessage] = useState({ type: '', text: '' })
 
@@ -60,12 +60,15 @@ function LibraryPage() {
       return
     }
 
+    // Auto-set type to 'select' if options exist
+    const headerType = newHeader.options.length > 0 ? 'select' : newHeader.type
+
     setLoading(true)
     try {
-      const response = await libraryAPI.addHeader(newHeader.name, newHeader.options)
+      const response = await libraryAPI.addHeader(newHeader.name, newHeader.options, headerType)
       if (response.data.success) {
         setLibrary(response.data.data)
-        setNewHeader({ name: '', options: [] })
+        setNewHeader({ name: '', options: [], type: 'text' })
         setMessage({ type: 'success', text: 'Header added successfully' })
         // Emit event to notify FilePage
         window.dispatchEvent(new CustomEvent('library-updated'))
@@ -77,14 +80,16 @@ function LibraryPage() {
     }
   }
 
-  const handleUpdateHeader = async (oldName, newName, options) => {
+  const handleUpdateHeader = async (oldName, newName, options, type) => {
     setLoading(true)
     try {
-      const response = await libraryAPI.updateHeader(oldName, newName, options)
+      // Auto-set type to 'select' if options exist
+      const headerType = options.length > 0 ? 'select' : (type || 'text')
+      const response = await libraryAPI.updateHeader(oldName, newName, options, headerType)
       if (response.data.success) {
         setLibrary(response.data.data)
         setEditingIndex(null)
-        setEditingHeader({ name: '', options: [] })
+        setEditingHeader({ name: '', options: [], type: 'text' })
         setEditingOption('')
         setMessage({ type: 'success', text: 'Header updated successfully' })
         // Emit event to notify FilePage
@@ -120,7 +125,8 @@ function LibraryPage() {
     if (newOption.trim()) {
       setNewHeader({
         ...newHeader,
-        options: [...newHeader.options, newOption.trim()]
+        options: [...newHeader.options, newOption.trim()],
+        type: 'select' // Auto-set type to select when options are added
       })
       setNewOption('')
     }
@@ -138,14 +144,15 @@ function LibraryPage() {
     setEditingIndex(index)
     setEditingHeader({
       name: header.name,
-      options: [...header.options]
+      options: [...header.options],
+      type: header.type || (header.options.length > 0 ? 'select' : 'text')
     })
     setEditingOption('')
   }
 
   const handleCancelEdit = () => {
     setEditingIndex(null)
-    setEditingHeader({ name: '', options: [] })
+    setEditingHeader({ name: '', options: [], type: 'text' })
     setEditingOption('')
   }
 
@@ -153,7 +160,8 @@ function LibraryPage() {
     if (editingOption.trim()) {
       setEditingHeader({
         ...editingHeader,
-        options: [...editingHeader.options, editingOption.trim()]
+        options: [...editingHeader.options, editingOption.trim()],
+        type: 'select' // Auto-set type to select when options are added
       })
       setEditingOption('')
     }
@@ -173,17 +181,21 @@ function LibraryPage() {
       return
     }
     
+    // Auto-set type to 'select' if options exist
+    const headerType = editingHeader.options.length > 0 ? 'select' : (editingHeader.type || 'text')
+    
     setLoading(true)
     try {
       const response = await libraryAPI.updateHeader(
         oldHeader.name, 
         editingHeader.name, 
-        editingHeader.options || []
+        editingHeader.options || [],
+        headerType
       )
       if (response.data.success) {
         setLibrary(response.data.data)
         setEditingIndex(null)
-        setEditingHeader({ name: '', options: [] })
+        setEditingHeader({ name: '', options: [], type: 'text' })
         setEditingOption('')
         setMessage({ type: 'success', text: 'Header updated successfully' })
         // Emit event to notify FilePage
@@ -230,41 +242,79 @@ function LibraryPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Options
+                Column Type
               </label>
-              <div className="flex space-x-2 mb-2">
-                <input
-                  type="text"
-                  value={newOption}
-                  onChange={(e) => setNewOption(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addOptionToNewHeader()}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter option and press Enter"
-                />
-                <button
-                  onClick={addOptionToNewHeader}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Add
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {newHeader.options.map((opt, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                  >
-                    {opt}
-                    <button
-                      onClick={() => removeOptionFromNewHeader(index)}
-                      className="ml-2 text-blue-600 hover:text-blue-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
+              <select
+                value={newHeader.options.length > 0 ? 'select' : newHeader.type}
+                onChange={(e) => {
+                  const newType = e.target.value
+                  // If switching away from select, clear options
+                  if (newType !== 'select' && newHeader.options.length > 0) {
+                    setNewHeader({ ...newHeader, type: newType, options: [] })
+                  } else {
+                    setNewHeader({ ...newHeader, type: newType })
+                  }
+                }}
+                disabled={newHeader.options.length > 0}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+              </select>
+              {newHeader.options.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Type is automatically set to "Select" when options are added. Clear all options to change type.
+                </p>
+              )}
             </div>
+            {newHeader.type !== 'number' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Options (Optional - Add options to create a dropdown)
+                </label>
+                <div className="flex space-x-2 mb-2">
+                  <input
+                    type="text"
+                    value={newOption}
+                    onChange={(e) => setNewOption(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && addOptionToNewHeader()}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter option and press Enter"
+                  />
+                  <button
+                    onClick={addOptionToNewHeader}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Add
+                  </button>
+                </div>
+                {newHeader.options.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {newHeader.options.map((opt, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                      >
+                        {opt}
+                        <button
+                          onClick={() => {
+                            const updatedOptions = newHeader.options.filter((_, i) => i !== index)
+                            setNewHeader({
+                              ...newHeader,
+                              options: updatedOptions,
+                              type: updatedOptions.length === 0 ? newHeader.type : 'select'
+                            })
+                          }}
+                          className="ml-2 text-blue-600 hover:text-blue-800"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <button
               onClick={handleAddHeader}
               disabled={loading}
@@ -300,43 +350,81 @@ function LibraryPage() {
                           placeholder="Header name"
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Options
-                        </label>
-                        <div className="flex space-x-2 mb-2">
-                          <input
-                            type="text"
-                            value={editingOption}
-                            onChange={(e) => setEditingOption(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && addOptionToEditingHeader()}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Enter option and press Enter"
-                          />
-                          <button
-                            onClick={addOptionToEditingHeader}
-                            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {editingHeader.options.map((opt, optIndex) => (
-                            <span
-                              key={optIndex}
-                              className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                            >
-                              {opt}
-                              <button
-                                onClick={() => removeOptionFromEditingHeader(optIndex)}
-                                className="ml-2 text-blue-600 hover:text-blue-800"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 mb-2">
+                           Column Type
+                         </label>
+                         <select
+                           value={editingHeader.options.length > 0 ? 'select' : (editingHeader.type || 'text')}
+                           onChange={(e) => {
+                             const newType = e.target.value
+                             // If switching away from select, clear options
+                             if (newType !== 'select' && editingHeader.options.length > 0) {
+                               setEditingHeader({ ...editingHeader, type: newType, options: [] })
+                             } else {
+                               setEditingHeader({ ...editingHeader, type: newType })
+                             }
+                           }}
+                           disabled={editingHeader.options.length > 0}
+                           className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                         >
+                           <option value="text">Text</option>
+                           <option value="number">Number</option>
+                         </select>
+                         {editingHeader.options.length > 0 && (
+                           <p className="text-xs text-gray-500 mt-1">
+                             Type is automatically set to "Select" when options are added. Clear all options to change type.
+                           </p>
+                         )}
+                       </div>
+                       {editingHeader.type !== 'number' && (
+                         <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">
+                             Options (Optional - Add options to create a dropdown)
+                           </label>
+                           <div className="flex space-x-2 mb-2">
+                             <input
+                               type="text"
+                               value={editingOption}
+                               onChange={(e) => setEditingOption(e.target.value)}
+                               onKeyPress={(e) => e.key === 'Enter' && addOptionToEditingHeader()}
+                               className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Enter option and press Enter"
+                             />
+                             <button
+                               onClick={addOptionToEditingHeader}
+                               className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                             >
+                               Add
+                             </button>
+                           </div>
+                           {editingHeader.options.length > 0 && (
+                             <div className="flex flex-wrap gap-2">
+                               {editingHeader.options.map((opt, optIndex) => (
+                                 <span
+                                   key={optIndex}
+                                   className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                                 >
+                                   {opt}
+                                   <button
+                                     onClick={() => {
+                                       const updatedOptions = editingHeader.options.filter((_, i) => i !== optIndex)
+                                       setEditingHeader({
+                                         ...editingHeader,
+                                         options: updatedOptions,
+                                         type: updatedOptions.length === 0 ? editingHeader.type : 'select'
+                                       })
+                                     }}
+                                     className="ml-2 text-blue-600 hover:text-blue-800"
+                                   >
+                                     ×
+                                   </button>
+                                 </span>
+                               ))}
+                             </div>
+                           )}
+                         </div>
+                       )}
                       <div className="flex space-x-2">
                         <button
                           onClick={() => handleSaveEdit(index)}

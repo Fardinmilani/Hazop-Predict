@@ -7,6 +7,16 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
     return header ? header.options : []
   }
 
+  const getColumnType = (columnName) => {
+    if (!library || !library.headers) return 'text'
+    const header = library.headers.find(h => h.name === columnName)
+    if (!header) return 'text'
+    // If has options, it's select type
+    if (header.options && header.options.length > 0) return 'select'
+    // Otherwise use the type field or default to text
+    return header.type || 'text'
+  }
+
   const handleCellChange = (rowIndex, columnName, value) => {
     if (onCellChange) {
       onCellChange(rowIndex, columnName, value)
@@ -50,11 +60,12 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
               </td>
               {columns.map((col, colIndex) => {
                 const options = getOptionsForColumn(col)
+                const columnType = getColumnType(col)
                 const cellValue = row[col] || ''
                 
                 return (
                   <td key={colIndex} className="px-4 py-2 border-b">
-                    {options.length > 0 ? (
+                    {columnType === 'select' && options.length > 0 ? (
                       <select
                         value={cellValue}
                         onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
@@ -67,6 +78,15 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
                           </option>
                         ))}
                       </select>
+                    ) : columnType === 'number' ? (
+                      <input
+                        type="number"
+                        step="any"
+                        value={cellValue}
+                        onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter number..."
+                      />
                     ) : (
                       <input
                         type="text"
