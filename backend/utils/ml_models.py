@@ -8,12 +8,26 @@ import pandas as pd
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier, AdaBoostRegressor, AdaBoostClassifier
 from sklearn.svm import SVR, SVC
+from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, classification_report
 import warnings
 warnings.filterwarnings('ignore')
+
+# Try to import XGBoost and CatBoost (optional dependencies)
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+
+try:
+    import catboost as cb
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
 
 def prepare_data(data, feature_columns, target_column, target_type='number'):
     """
@@ -201,21 +215,40 @@ def train_models(X, y, test_size=0.2):
     y_train_scaled = y_scaler.fit_transform(y_train.reshape(-1, 1)).ravel()
     y_test_scaled = y_scaler.transform(y_test.reshape(-1, 1)).ravel()
     
+    # Build models dictionary dynamically
     models = {
         'Linear Regression': LinearRegression(),
         'Decision Tree': DecisionTreeRegressor(random_state=42),
         'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42),
+        'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, random_state=42),
+        'AdaBoost': AdaBoostRegressor(n_estimators=50, random_state=42),
+        'K-Nearest Neighbors': KNeighborsRegressor(n_neighbors=5),
         'SVM': SVR(kernel='rbf')
     }
+    
+    # Add XGBoost if available
+    if XGBOOST_AVAILABLE:
+        models['XGBoost'] = xgb.XGBRegressor(n_estimators=100, random_state=42, verbosity=0)
+    
+    # Add CatBoost if available
+    if CATBOOST_AVAILABLE:
+        models['CatBoost'] = cb.CatBoostRegressor(iterations=100, random_state=42, verbose=False)
     
     for name, model in models.items():
         try:
             # Use scaled data for SVM and scaled target
+            # XGBoost and CatBoost work better with unscaled data, but we'll use scaled target
             if name == 'SVM':
                 model.fit(X_train_scaled, y_train_scaled)
                 y_pred_train_scaled = model.predict(X_train_scaled)
                 y_pred_test_scaled = model.predict(X_test_scaled)
+            elif name == 'K-Nearest Neighbors':
+                # KNN benefits from scaled features
+                model.fit(X_train_scaled, y_train_scaled)
+                y_pred_train_scaled = model.predict(X_train_scaled)
+                y_pred_test_scaled = model.predict(X_test_scaled)
             else:
+                # Other models (including XGBoost, CatBoost) work with unscaled features
                 model.fit(X_train, y_train_scaled)
                 y_pred_train_scaled = model.predict(X_train)
                 y_pred_test_scaled = model.predict(X_test)
@@ -246,7 +279,7 @@ def train_models(X, y, test_size=0.2):
             # Only run CV if we have at least 2 folds
             if n_folds >= 2:
                 try:
-                    if name == 'SVM':
+                    if name == 'SVM' or name == 'K-Nearest Neighbors':
                         cv_scores = cross_val_score(model, X_train_scaled, y_train_scaled, cv=n_folds, scoring='r2')
                     else:
                         cv_scores = cross_val_score(model, X_train, y_train_scaled, cv=n_folds, scoring='r2')
@@ -330,21 +363,35 @@ def train_models_classification(X, y, test_size=0.2):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
+    # Build models dictionary dynamically
     models = {
         'Logistic Regression': LogisticRegression(random_state=42, max_iter=1000),
         'Decision Tree': DecisionTreeClassifier(random_state=42),
         'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
+        'Gradient Boosting': GradientBoostingClassifier(n_estimators=100, random_state=42),
+        'AdaBoost': AdaBoostClassifier(n_estimators=50, random_state=42),
+        'K-Nearest Neighbors': KNeighborsClassifier(n_neighbors=5),
         'SVM': SVC(kernel='rbf', random_state=42)
     }
     
+    # Add XGBoost if available
+    if XGBOOST_AVAILABLE:
+        models['XGBoost'] = xgb.XGBClassifier(n_estimators=100, random_state=42, verbosity=0)
+    
+    # Add CatBoost if available
+    if CATBOOST_AVAILABLE:
+        models['CatBoost'] = cb.CatBoostClassifier(iterations=100, random_state=42, verbose=False)
+    
     for name, model in models.items():
         try:
-            # Use scaled data for SVM
-            if name == 'SVM':
+            # Use scaled data for SVM and KNN
+            # XGBoost and CatBoost work better with unscaled data
+            if name == 'SVM' or name == 'K-Nearest Neighbors':
                 model.fit(X_train_scaled, y_train)
                 y_pred_train = model.predict(X_train_scaled)
                 y_pred_test = model.predict(X_test_scaled)
             else:
+                # Other models (including XGBoost, CatBoost) work with unscaled features
                 model.fit(X_train, y_train)
                 y_pred_train = model.predict(X_train)
                 y_pred_test = model.predict(X_test)
@@ -374,7 +421,7 @@ def train_models_classification(X, y, test_size=0.2):
             # Only run CV if we have at least 2 folds
             if n_folds >= 2:
                 try:
-                    if name == 'SVM':
+                    if name == 'SVM' or name == 'K-Nearest Neighbors':
                         cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=n_folds, scoring='accuracy')
                     else:
                         cv_scores = cross_val_score(model, X_train, y_train, cv=n_folds, scoring='accuracy')
@@ -385,7 +432,7 @@ def train_models_classification(X, y, test_size=0.2):
                     try:
                         from sklearn.model_selection import KFold
                         kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
-                        if name == 'SVM':
+                        if name == 'SVM' or name == 'K-Nearest Neighbors':
                             cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=kf, scoring='accuracy')
                         else:
                             cv_scores = cross_val_score(model, X_train, y_train, cv=kf, scoring='accuracy')
@@ -401,7 +448,7 @@ def train_models_classification(X, y, test_size=0.2):
             
             results[name] = {
                 'model': model,
-                'scaler': scaler if name == 'SVM' else None,
+                'scaler': scaler if (name == 'SVM' or name == 'K-Nearest Neighbors') else None,
                 'train_accuracy': float(train_accuracy),
                 'test_accuracy': float(test_accuracy),
                 'train_precision': float(train_precision),
@@ -445,7 +492,8 @@ def predict(model_result, input_data, feature_columns, label_encoders):
     # Handle missing values
     X_input = X_input.fillna(0)
     
-    # Scale if needed
+    # Scale if needed (for SVM and KNN)
+    scaler = model_result.get('scaler')
     if scaler:
         X_input = scaler.transform(X_input)
     

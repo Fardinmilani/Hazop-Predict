@@ -7,3 +7,5 @@ openpyxl==3.1.2
 matplotlib==3.8.2
 seaborn==0.13.0
 reportlab==4.0.7
+xgboost==2.0.3
+catboost==1.2.2
