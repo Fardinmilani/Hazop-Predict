@@ -54,3 +54,7 @@ Thumbs.db
 frontend/dist/
 frontend/build/
 
+# CatBoost temporary files
+catboost_info/
+*.catboost
+
