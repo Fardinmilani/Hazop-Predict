@@ -1,20 +1,45 @@
 import React from 'react'
+import { Plus } from 'lucide-react'
 
-function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDeleteColumn, library }) {
+function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDeleteColumn, library, temporaryColumnMetadata = {}, onAddToLibrary }) {
   const getOptionsForColumn = (columnName) => {
-    if (!library || !library.headers) return []
-    const header = library.headers.find(h => h.name === columnName)
-    return header ? header.options : []
+    // First check library
+    if (library && library.headers) {
+      const header = library.headers.find(h => h.name === columnName)
+      if (header && header.options) {
+        return header.options
+      }
+    }
+    // Then check temporary metadata (for columns not in library)
+    if (temporaryColumnMetadata[columnName]) {
+      return temporaryColumnMetadata[columnName].options || []
+    }
+    return []
   }
 
   const getColumnType = (columnName) => {
-    if (!library || !library.headers) return 'text'
-    const header = library.headers.find(h => h.name === columnName)
-    if (!header) return 'text'
-    // If has options, it's select type
-    if (header.options && header.options.length > 0) return 'select'
-    // Otherwise use the type field or default to text
-    return header.type || 'text'
+    // First check library
+    if (library && library.headers) {
+      const header = library.headers.find(h => h.name === columnName)
+      if (header) {
+        // If has options, it's select type
+        if (header.options && header.options.length > 0) return 'select'
+        // Otherwise use the type field or default to text
+        return header.type || 'text'
+      }
+    }
+    // Then check temporary metadata (for columns not in library)
+    if (temporaryColumnMetadata[columnName]) {
+      const metadata = temporaryColumnMetadata[columnName]
+      if (metadata.options && metadata.options.length > 0) return 'select'
+      return metadata.type || 'text'
+    }
+    return 'text'
+  }
+
+  const isColumnInLibrary = (columnName) => {
+    if (!library || !library.headers) return false
+    return library.headers.some(h => h.name === columnName)
   }
 
   const handleCellChange = (rowIndex, columnName, value) => {
@@ -31,22 +56,37 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
               Row No
             </th>
-            {columns.map((col, idx) => (
-              <th key={idx} className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
-                <div className="flex items-center justify-between">
-                  <span>{col}</span>
-                  {onDeleteColumn && (
-                    <button
-                      onClick={() => onDeleteColumn(col)}
-                      className="ml-2 text-red-500 hover:text-red-700 text-sm font-bold"
-                      title="Delete column"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              </th>
-            ))}
+            {columns.map((col, idx) => {
+              const isInLibrary = isColumnInLibrary(col)
+              return (
+                <th key={idx} className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
+                  <div className="flex items-center justify-between">
+                    <span>{col}</span>
+                    <div className="flex items-center space-x-1">
+                      {!isInLibrary && onAddToLibrary && (
+                        <button
+                          onClick={() => onAddToLibrary(col)}
+                          className="text-green-500 hover:text-green-700 text-xs px-2 py-1 border border-green-300 rounded flex items-center space-x-1"
+                          title="Add to Library"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add</span>
+                        </button>
+                      )}
+                      {onDeleteColumn && (
+                        <button
+                          onClick={() => onDeleteColumn(col)}
+                          className="text-red-500 hover:text-red-700 text-sm font-bold"
+                          title="Delete column"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </th>
+              )
+            })}
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b">
               Actions
             </th>

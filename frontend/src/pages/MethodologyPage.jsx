@@ -273,11 +273,6 @@ function MethodologyPage() {
                   </tbody>
                 </table>
               </div>
-              {!isClassification && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-                  <strong>Note:</strong> Test R² can be negative when the model performs worse than simply predicting the mean of the target on the test set. This is mathematically valid and indicates the model needs improvement (e.g., more features, different model type, or more training data).
-                </div>
-              )}
             </div>
           )
         })()}

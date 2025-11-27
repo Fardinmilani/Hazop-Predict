@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { projectAPI, libraryAPI, rankingAPI } from '../utils/api'
 import DataTable from '../components/DataTable'
-import { AlertCircle, X } from 'lucide-react'
+import { AlertCircle, X, Plus } from 'lucide-react'
 
 function ProjectPage() {
   const [rows, setRows] = useState([])
@@ -13,6 +13,9 @@ function ProjectPage() {
   const [showDeleteColumnModal, setShowDeleteColumnModal] = useState(false)
   const [columnToDelete, setColumnToDelete] = useState(null)
   const [columnHasData, setColumnHasData] = useState(false)
+  const [showAddToLibraryModal, setShowAddToLibraryModal] = useState(false)
+  const [columnToAddToLibrary, setColumnToAddToLibrary] = useState(null)
+  const [addToLibraryMode, setAddToLibraryMode] = useState(null) // 'replace' or 'merge'
 
   useEffect(() => {
     loadLibrary()
@@ -91,6 +94,44 @@ function ProjectPage() {
       console.error('Error loading library:', error)
     }
   }
+
+  // Auto-detect column types and extract options for columns not in library
+  const temporaryColumnMetadata = useMemo(() => {
+    const metadata = {}
+    const libraryColumnNames = library.headers.map(h => h.name)
+    
+    columns.forEach(col => {
+      // Only process columns that are NOT in library
+      if (!libraryColumnNames.includes(col)) {
+        const values = rows
+          .map(row => row[col])
+          .filter(val => val !== undefined && val !== null && val !== '')
+          .map(val => String(val).trim())
+        
+        if (values.length === 0) {
+          // No data, default to text
+          metadata[col] = { type: 'text', options: [] }
+          return
+        }
+        
+        // Check if all values are numeric
+        const allNumeric = values.every(val => {
+          const num = Number(val)
+          return !isNaN(num) && isFinite(num) && val !== ''
+        })
+        
+        if (allNumeric) {
+          metadata[col] = { type: 'number', options: [] }
+        } else {
+          // Text type - extract unique values as options
+          const uniqueValues = [...new Set(values)].sort()
+          metadata[col] = { type: 'text', options: uniqueValues }
+        }
+      }
+    })
+    
+    return metadata
+  }, [columns, rows, library])
 
   const loadProject = async () => {
     try {
@@ -337,6 +378,87 @@ function ProjectPage() {
     setColumnHasData(false)
   }
 
+  const handleAddToLibraryClick = (columnName) => {
+    setColumnToAddToLibrary(columnName)
+    // Check if column already exists in library
+    const existingHeader = library.headers.find(h => h.name === columnName)
+    if (existingHeader) {
+      // Show modal to choose replace or merge
+      setShowAddToLibraryModal(true)
+    } else {
+      // Directly add to library
+      handleAddToLibrary(columnName, 'new')
+    }
+  }
+
+  const handleAddToLibrary = async (columnName, mode = 'new') => {
+    if (!columnName) return
+    
+    const metadata = temporaryColumnMetadata[columnName]
+    if (!metadata) {
+      setMessage({ type: 'error', text: 'Column metadata not found' })
+      return
+    }
+    
+    setLoading(true)
+    try {
+      const existingHeader = library.headers.find(h => h.name === columnName)
+      
+      if (existingHeader && mode === 'replace') {
+        // Replace existing header
+        const response = await libraryAPI.updateHeader(
+          columnName,
+          columnName,
+          metadata.options,
+          metadata.type
+        )
+        if (response.data.success) {
+          await loadLibrary()
+          setMessage({ type: 'success', text: `Column "${columnName}" updated in Library` })
+          window.dispatchEvent(new CustomEvent('library-updated'))
+        }
+      } else if (existingHeader && mode === 'merge') {
+        // Merge options with existing header
+        const existingOptions = existingHeader.options || []
+        const newOptions = metadata.options || []
+        const mergedOptions = [...new Set([...existingOptions, ...newOptions])].sort()
+        const finalType = existingHeader.type || metadata.type
+        
+        const response = await libraryAPI.updateHeader(
+          columnName,
+          columnName,
+          mergedOptions,
+          finalType
+        )
+        if (response.data.success) {
+          await loadLibrary()
+          setMessage({ type: 'success', text: `Column "${columnName}" merged with Library` })
+          window.dispatchEvent(new CustomEvent('library-updated'))
+        }
+      } else {
+        // Add new header
+        const headerType = metadata.options.length > 0 ? 'select' : metadata.type
+        const response = await libraryAPI.addHeader(columnName, metadata.options, headerType)
+        if (response.data.success) {
+          await loadLibrary()
+          setMessage({ type: 'success', text: `Column "${columnName}" added to Library` })
+          window.dispatchEvent(new CustomEvent('library-updated'))
+          // Refresh the page data to reflect library changes
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('library-updated'))
+          }, 100)
+        }
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to add to Library' })
+    } finally {
+      setLoading(false)
+      setShowAddToLibraryModal(false)
+      setColumnToAddToLibrary(null)
+      setAddToLibraryMode(null)
+    }
+  }
+
   const availableColumns = getAvailableColumns()
 
   return (
@@ -383,6 +505,8 @@ function ProjectPage() {
             onDeleteRow={handleDeleteRow}
             onDeleteColumn={handleDeleteColumnClick}
             library={library}
+            temporaryColumnMetadata={temporaryColumnMetadata}
+            onAddToLibrary={handleAddToLibraryClick}
           />
         )}
       </div>
@@ -487,6 +611,85 @@ function ProjectPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add to Library Modal (for existing headers) */}
+      {showAddToLibraryModal && columnToAddToLibrary && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Column Already Exists</h3>
+              <button
+                onClick={() => {
+                  setShowAddToLibraryModal(false)
+                  setColumnToAddToLibrary(null)
+                  setAddToLibraryMode(null)
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <p className="text-gray-600 mb-4">
+              Column <strong>"{columnToAddToLibrary}"</strong> already exists in Library.
+            </p>
+            
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+              <p className="text-sm text-blue-800 mb-2">
+                <strong>Current options in Library:</strong>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {library.headers.find(h => h.name === columnToAddToLibrary)?.options?.map((opt, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                    {opt}
+                  </span>
+                )) || <span className="text-xs text-gray-500">No options</span>}
+              </div>
+            </div>
+            
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded">
+              <p className="text-sm text-green-800 mb-2">
+                <strong>New options from project data:</strong>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {temporaryColumnMetadata[columnToAddToLibrary]?.options?.map((opt, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                    {opt}
+                  </span>
+                )) || <span className="text-xs text-gray-500">No options</span>}
+              </div>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              <button
+                onClick={() => handleAddToLibrary(columnToAddToLibrary, 'replace')}
+                className="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 text-left"
+              >
+                <div className="font-medium">Replace</div>
+                <div className="text-xs opacity-90">Replace existing options with new ones</div>
+              </button>
+              <button
+                onClick={() => handleAddToLibrary(columnToAddToLibrary, 'merge')}
+                className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 text-left"
+              >
+                <div className="font-medium">Merge</div>
+                <div className="text-xs opacity-90">Add new options to existing ones</div>
+              </button>
+            </div>
+            
+            <button
+              onClick={() => {
+                setShowAddToLibraryModal(false)
+                setColumnToAddToLibrary(null)
+                setAddToLibraryMode(null)
+              }}
+              className="w-full px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
