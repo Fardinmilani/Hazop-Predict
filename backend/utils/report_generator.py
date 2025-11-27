@@ -16,6 +16,10 @@ def generate_statistics(data):
     """Generate statistical summary of dataset"""
     df = pd.DataFrame(data)
     
+    # Remove rowNo column if it exists (not needed in calculations)
+    if 'rowNo' in df.columns:
+        df = df.drop(columns=['rowNo'])
+    
     stats = {
         'count': len(df),
         'columns': list(df.columns),
@@ -50,6 +54,9 @@ def generate_statistics(data):
 def generate_correlation_heatmap(data):
     """Generate correlation heatmap as base64 image"""
     df = pd.DataFrame(data)
+    # Remove rowNo column if it exists (not needed in calculations)
+    if 'rowNo' in df.columns:
+        df = df.drop(columns=['rowNo'])
     numeric_df = df.select_dtypes(include=[np.number])
     
     if numeric_df.empty or len(numeric_df.columns) < 2:
@@ -73,6 +80,9 @@ def generate_correlation_heatmap(data):
 def generate_bar_chart(data, column):
     """Generate bar chart for a column"""
     df = pd.DataFrame(data)
+    # Remove rowNo column if it exists (not needed in calculations)
+    if 'rowNo' in df.columns:
+        df = df.drop(columns=['rowNo'])
     
     if column not in df.columns:
         return None
@@ -97,6 +107,9 @@ def generate_bar_chart(data, column):
 def generate_scatter_plot(data, x_col, y_col):
     """Generate scatter plot"""
     df = pd.DataFrame(data)
+    # Remove rowNo column if it exists (not needed in calculations)
+    if 'rowNo' in df.columns:
+        df = df.drop(columns=['rowNo'])
     
     if x_col not in df.columns or y_col not in df.columns:
         return None

@@ -10,6 +10,7 @@ function RankingPage() {
   const [alternativesScores, setAlternativesScores] = useState({})
   const [rankingResult, setRankingResult] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [message, setMessage] = useState({ type: '', text: '' })
   const [showAddColumnModal, setShowAddColumnModal] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
@@ -64,12 +65,17 @@ function RankingPage() {
   useEffect(() => {
     // Load data in sequence to avoid race conditions
     const loadAllData = async () => {
-      const rows = await loadProjectData()
-      await loadLibrary()
-      // Then load ranking data which will merge with the structure
-      // Pass rows to loadRankingData so it can use them immediately
-      // This will also clear data if file was deleted
-      await loadRankingData(rows)
+      setInitialLoading(true)
+      try {
+        const rows = await loadProjectData()
+        await loadLibrary()
+        // Then load ranking data which will merge with the structure
+        // Pass rows to loadRankingData so it can use them immediately
+        // This will also clear data if file was deleted
+        await loadRankingData(rows)
+      } finally {
+        setInitialLoading(false)
+      }
     }
     
     loadAllData()
@@ -567,6 +573,7 @@ function RankingPage() {
     }
 
     setLoading(true)
+    setMessage({ type: '', text: '' })
     try {
       const response = await rankingAPI.ahp(criteriaWeights, alternativesScores)
       if (response.data.success) {
@@ -577,7 +584,7 @@ function RankingPage() {
         updateRanking(criteriaWeights, alternativesScores, result)
       }
     } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.error || 'Ranking failed' })
+      setMessage({ type: 'error', text: error.response?.data?.error || 'Ranking calculation failed' })
     } finally {
       setLoading(false)
     }
@@ -593,6 +600,17 @@ function RankingPage() {
     await updateRanking(criteriaWeights, alternativesScores, null)
     setMessage({ type: 'success', text: 'Ranking results reset successfully' })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-gray-600">Loading ranking data...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -706,8 +724,17 @@ function RankingPage() {
           disabled={loading}
           className="flex items-center space-x-2 px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
         >
-          <BarChart3 className="w-5 h-5" />
-          <span>Calculate Ranking</span>
+          {loading ? (
+            <>
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+              <span>Calculating...</span>
+            </>
+          ) : (
+            <>
+              <BarChart3 className="w-5 h-5" />
+              <span>Calculate Ranking</span>
+            </>
+          )}
         </button>
 
         {/* Results */}

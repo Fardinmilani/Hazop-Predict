@@ -13,10 +13,18 @@ function MethodologyPage() {
   const [predictionResult, setPredictionResult] = useState(null)
   const [selectedModel, setSelectedModel] = useState('')
   const [library, setLibrary] = useState({ headers: [] })
+  const [initialLoading, setInitialLoading] = useState(true)
 
   useEffect(() => {
-    loadProjectData()
-    loadLibrary()
+    const loadData = async () => {
+      setInitialLoading(true)
+      try {
+        await Promise.all([loadProjectData(), loadLibrary()])
+      } finally {
+        setInitialLoading(false)
+      }
+    }
+    loadData()
   }, [])
 
   const loadProjectData = async () => {
@@ -30,6 +38,7 @@ function MethodologyPage() {
       }
     } catch (error) {
       console.error('Error loading project:', error)
+      setMessage({ type: 'error', text: 'Failed to load project data' })
     }
   }
 
@@ -41,6 +50,7 @@ function MethodologyPage() {
       }
     } catch (error) {
       console.error('Error loading library:', error)
+      setMessage({ type: 'error', text: 'Failed to load library' })
     }
   }
 
@@ -75,6 +85,7 @@ function MethodologyPage() {
     const targetType = getColumnType(selectedTarget)
 
     setLoading(true)
+    setMessage({ type: '', text: '' })
     try {
       const response = await methodologyAPI.train(
         projectData,
@@ -113,6 +124,17 @@ function MethodologyPage() {
   }
 
   const [message, setMessage] = useState({ type: '', text: '' })
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-gray-600">Loading methodology data...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -177,8 +199,17 @@ function MethodologyPage() {
             disabled={loading || selectedFeatures.length === 0 || !selectedTarget}
             className="flex items-center space-x-2 px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
           >
-            <Play className="w-5 h-5" />
-            <span>Train Models</span>
+            {loading ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Training Models...</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-5 h-5" />
+                <span>Train Models</span>
+              </>
+            )}
           </button>
         </div>
 
@@ -366,8 +397,17 @@ function MethodologyPage() {
                 disabled={loading || !selectedModel}
                 className="flex items-center space-x-2 px-6 py-3 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
               >
-                <TrendingUp className="w-5 h-5" />
-                <span>Predict</span>
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Predicting...</span>
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp className="w-5 h-5" />
+                    <span>Predict</span>
+                  </>
+                )}
               </button>
 
               {predictionResult !== null && (

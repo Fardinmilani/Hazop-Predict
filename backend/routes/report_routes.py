@@ -83,6 +83,9 @@ def export_excel():
         
         # Main data sheet
         df_data = pd.DataFrame(project_data)
+        # Remove rowNo column if it exists (not needed in report)
+        if 'rowNo' in df_data.columns:
+            df_data = df_data.drop(columns=['rowNo'])
         
         # Statistics sheet
         stats_rows = []

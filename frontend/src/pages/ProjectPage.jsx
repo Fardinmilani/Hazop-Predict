@@ -8,6 +8,7 @@ function ProjectPage() {
   const [columns, setColumns] = useState([])
   const [library, setLibrary] = useState({ headers: [] })
   const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [message, setMessage] = useState({ type: '', text: '' })
   const [showColumnModal, setShowColumnModal] = useState(false)
   const [showDeleteColumnModal, setShowDeleteColumnModal] = useState(false)
@@ -18,8 +19,15 @@ function ProjectPage() {
   const [addToLibraryMode, setAddToLibraryMode] = useState(null) // 'replace' or 'merge'
 
   useEffect(() => {
-    loadLibrary()
-    loadProject()
+    const loadData = async () => {
+      setInitialLoading(true)
+      try {
+        await Promise.all([loadLibrary(), loadProject()])
+      } finally {
+        setInitialLoading(false)
+      }
+    }
+    loadData()
     
     // Listen for project events from FilePage
     const handleNew = async (e) => {
@@ -92,6 +100,7 @@ function ProjectPage() {
       }
     } catch (error) {
       console.error('Error loading library:', error)
+      setMessage({ type: 'error', text: 'Failed to load library' })
     }
   }
 
@@ -159,6 +168,7 @@ function ProjectPage() {
       }
     } catch (error) {
       console.error('Error loading project:', error)
+      setMessage({ type: 'error', text: 'Failed to load project' })
     }
   }
 
@@ -460,6 +470,17 @@ function ProjectPage() {
   }
 
   const availableColumns = getAvailableColumns()
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-gray-600">Loading project data...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

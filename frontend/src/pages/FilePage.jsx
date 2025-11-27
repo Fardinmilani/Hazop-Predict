@@ -15,6 +15,8 @@ const getFileKey = (file) => {
 function FilePage() {
   const [activeFiles, setActiveFiles] = useState([]) // Track currently active/opened files
   const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [saveLoading, setSaveLoading] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
   const fileInputRef = useRef(null)
 
@@ -70,7 +72,15 @@ function FilePage() {
     const savedFiles = getStoredActiveFiles()
     
     // Check for existing backend files and add them if they have data
-    checkBackendFiles([...savedFiles])
+    const loadFiles = async () => {
+      setInitialLoading(true)
+      try {
+        await checkBackendFiles([...savedFiles])
+      } finally {
+        setInitialLoading(false)
+      }
+    }
+    loadFiles()
     
     // Listen for data updates from other pages
     const handleDataUpdate = () => {
@@ -217,21 +227,26 @@ function FilePage() {
   const handleNew = async (type) => {
     setLoading(true)
     setShowNewModal(false)
+    setMessage({ type: '', text: '' })
     
     try {
       if (type === 'project') {
         const response = await fileAPI.new()
         if (response.data.success) {
-          setMessage({ type: 'success', text: 'New project created' })
+          setMessage({ type: 'success', text: 'New project created successfully' })
           window.dispatchEvent(new CustomEvent('project-new', { detail: response.data.data }))
           addActiveFile('project.xlsx', 'project')
+        } else {
+          setMessage({ type: 'error', text: 'Failed to create new project' })
         }
       } else if (type === 'library') {
         // Create new library
         const response = await libraryAPI.save({ headers: [] })
         if (response.data.success) {
-          setMessage({ type: 'success', text: 'New library created' })
+          setMessage({ type: 'success', text: 'New library created successfully' })
           addActiveFile('New Library', 'library')
+        } else {
+          setMessage({ type: 'error', text: 'Failed to create new library' })
         }
       }
     } catch (error) {
@@ -386,7 +401,8 @@ function FilePage() {
       return
     }
 
-    setLoading(true)
+    setSaveLoading(true)
+    setMessage({ type: '', text: '' })
     try {
       // Collect data based on selected types
       const dataToSave = {}
@@ -529,7 +545,7 @@ function FilePage() {
             // Fallback: use download
             const filename = prompt('Enter filename (without extension):', 'project')
             if (!filename) {
-              setLoading(false)
+              setSaveLoading(false)
               return
             }
 
@@ -610,7 +626,7 @@ function FilePage() {
             // Fallback: use download
             const filename = prompt('Enter filename (without extension):', 'project')
             if (!filename) {
-              setLoading(false)
+              setSaveLoading(false)
               return
             }
 
@@ -651,7 +667,7 @@ function FilePage() {
       setMessage({ type: 'error', text: 'Failed to save file' })
       console.error('Error saving file:', error)
     } finally {
-      setLoading(false)
+      setSaveLoading(false)
     }
   }
 
@@ -712,6 +728,17 @@ function FilePage() {
     }
   }
 
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-gray-600">Loading file information...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-6">
@@ -729,7 +756,7 @@ function FilePage() {
           <div className="flex items-center space-x-4">
             <button
               onClick={() => setShowNewModal(true)}
-              disabled={loading}
+              disabled={loading || saveLoading}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
             >
               <FilePlus className="w-5 h-5" />
@@ -738,20 +765,38 @@ function FilePage() {
 
             <button
               onClick={handleOpen}
-              disabled={loading}
+              disabled={loading || saveLoading}
               className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
             >
-              <FolderOpen className="w-5 h-5" />
-              <span>Open</span>
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Opening...</span>
+                </>
+              ) : (
+                <>
+                  <FolderOpen className="w-5 h-5" />
+                  <span>Open</span>
+                </>
+              )}
             </button>
 
             <button
               onClick={() => setShowSaveModal(true)}
-              disabled={loading}
+              disabled={loading || saveLoading}
               className="flex items-center space-x-2 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50"
             >
-              <Save className="w-5 h-5" />
-              <span>Save</span>
+              {saveLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-5 h-5" />
+                  <span>Save</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -790,14 +835,16 @@ function FilePage() {
             <div className="space-y-2">
               <button
                 onClick={() => handleNew('project')}
-                className="w-full text-left px-4 py-3 border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-500 transition-colors"
+                disabled={loading}
+                className="w-full text-left px-4 py-3 border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="font-medium text-gray-800">Project</div>
                 <div className="text-xs text-gray-500 mt-1">Create a new HAZOP project workspace</div>
               </button>
               <button
                 onClick={() => handleNew('library')}
-                className="w-full text-left px-4 py-3 border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-500 transition-colors"
+                disabled={loading}
+                className="w-full text-left px-4 py-3 border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="font-medium text-gray-800">Library</div>
                 <div className="text-xs text-gray-500 mt-1">Create a new library configuration</div>
@@ -878,9 +925,17 @@ function FilePage() {
                   }
                   handleSave(selected)
                 }}
-                className="flex-1 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                disabled={saveLoading}
+                className="flex-1 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 flex items-center justify-center space-x-2"
               >
-                Save
+                {saveLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save</span>
+                )}
               </button>
               <button
                 onClick={() => setShowSaveModal(false)}
@@ -914,10 +969,17 @@ function FilePage() {
                   </div>
                   <button
                     onClick={() => handleRemoveFromList(file)}
-                    disabled={loading}
-                    className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                    disabled={loading || saveLoading}
+                    className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 flex items-center space-x-1"
                   >
-                    Remove
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        <span>Removing...</span>
+                      </>
+                    ) : (
+                      <span>Remove</span>
+                    )}
                   </button>
                 </div>
               </div>

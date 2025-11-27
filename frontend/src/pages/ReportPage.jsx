@@ -11,9 +11,19 @@ function ReportPage() {
   const [xColumn, setXColumn] = useState('')
   const [yColumn, setYColumn] = useState('')
   const [loading, setLoading] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
 
   useEffect(() => {
-    loadProjectData()
+    const loadData = async () => {
+      setInitialLoading(true)
+      try {
+        await loadProjectData()
+      } finally {
+        setInitialLoading(false)
+      }
+    }
+    loadData()
   }, [])
 
   const loadProjectData = async () => {
@@ -36,7 +46,12 @@ function ReportPage() {
 
     setLoading(true)
     try {
-      const response = await reportAPI.statistics(projectData)
+      // Remove rowNo from data before sending to backend
+      const dataWithoutRowNo = projectData.map(row => {
+        const { rowNo, ...rest } = row
+        return rest
+      })
+      const response = await reportAPI.statistics(dataWithoutRowNo)
       if (response.data.success) {
         setStatistics(response.data.data)
       }
@@ -72,7 +87,12 @@ function ReportPage() {
         options = { xColumn, yColumn }
       }
 
-      const response = await reportAPI.visualizations(projectData, selectedVizType, options)
+      // Remove rowNo from data before sending to backend
+      const dataWithoutRowNo = projectData.map(row => {
+        const { rowNo, ...rest } = row
+        return rest
+      })
+      const response = await reportAPI.visualizations(dataWithoutRowNo, selectedVizType, options)
       if (response.data.success) {
         setVisualizations({
           ...visualizations,
@@ -92,17 +112,23 @@ function ReportPage() {
       return
     }
 
-    setLoading(true)
+    setExportLoading(true)
     try {
+      // Remove rowNo from data before sending to backend
+      const dataWithoutRowNo = projectData.map(row => {
+        const { rowNo, ...rest } = row
+        return rest
+      })
       const filename = `report_${new Date().toISOString().split('T')[0]}.xlsx`
-      const response = await reportAPI.exportExcel(projectData, filename)
+      const response = await reportAPI.exportExcel(dataWithoutRowNo, filename)
       if (response.data.success) {
         alert('Excel report exported successfully!')
       }
     } catch (error) {
       console.error('Error exporting Excel:', error)
+      alert('Failed to export Excel report')
     } finally {
-      setLoading(false)
+      setExportLoading(false)
     }
   }
 
@@ -112,21 +138,41 @@ function ReportPage() {
       return
     }
 
-    setLoading(true)
+    setExportLoading(true)
     try {
+      // Remove rowNo from data before sending to backend
+      const dataWithoutRowNo = projectData.map(row => {
+        const { rowNo, ...rest } = row
+        return rest
+      })
       const filename = `report_${new Date().toISOString().split('T')[0]}.pdf`
-      const response = await reportAPI.exportPDF(projectData, filename)
+      const response = await reportAPI.exportPDF(dataWithoutRowNo, filename)
       if (response.data.success) {
         alert('PDF report exported successfully!')
       }
     } catch (error) {
       console.error('Error exporting PDF:', error)
+      alert('Failed to export PDF report')
     } finally {
-      setLoading(false)
+      setExportLoading(false)
     }
   }
 
-  const columns = projectData.length > 0 ? Object.keys(projectData[0]) : []
+  // Filter out rowNo from columns as it's not needed in report calculations
+  const columns = projectData.length > 0 
+    ? Object.keys(projectData[0]).filter(col => col !== 'rowNo')
+    : []
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-gray-600">Loading report data...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -136,19 +182,37 @@ function ReportPage() {
           <div className="flex space-x-2">
             <button
               onClick={handleExportExcel}
-              disabled={loading || projectData.length === 0}
+              disabled={exportLoading || loading || projectData.length === 0}
               className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
             >
-              <Download className="w-5 h-5" />
-              <span>Export Excel</span>
+              {exportLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Exporting Excel...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-5 h-5" />
+                  <span>Export Excel</span>
+                </>
+              )}
             </button>
             <button
               onClick={handleExportPDF}
-              disabled={loading || projectData.length === 0}
+              disabled={exportLoading || loading || projectData.length === 0}
               className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
             >
-              <Download className="w-5 h-5" />
-              <span>Export PDF</span>
+              {exportLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Exporting PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-5 h-5" />
+                  <span>Export PDF</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -160,9 +224,16 @@ function ReportPage() {
             <button
               onClick={loadStatistics}
               disabled={loading || projectData.length === 0}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
             >
-              Generate Statistics
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Generating...</span>
+                </>
+              ) : (
+                <span>Generate Statistics</span>
+              )}
             </button>
           </div>
 
@@ -263,9 +334,16 @@ function ReportPage() {
               <button
                 onClick={loadVisualization}
                 disabled={loading || projectData.length === 0}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
               >
-                Generate
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <span>Generate</span>
+                )}
               </button>
             </div>
 
