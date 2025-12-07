@@ -323,17 +323,67 @@ def save():
         filename = filename + '.xlsx'
     
     try:
-        # Check if it's ranking data (has criteriaWeights or alternativesScores)
-        if isinstance(file_data, dict) and ('criteriaWeights' in file_data or 'alternativesScores' in file_data):
-            # It's ranking data - save with multiple sheets
+        # Check if it has ranking data (has criteriaWeights or alternativesScores)
+        has_ranking_data = isinstance(file_data, dict) and ('criteriaWeights' in file_data or 'alternativesScores' in file_data)
+        # Check if it has project data (has rows)
+        has_project_data = isinstance(file_data, dict) and 'rows' in file_data and file_data.get('rows')
+        
+        if has_ranking_data:
+            # It has ranking data - extract ranking fields
             criteria_weights = file_data.get('criteriaWeights', {})
             alternatives_scores = file_data.get('alternativesScores', {})
             ranking_result = file_data.get('rankingResult', None)
-            ranking_columns = file_data.get('columns', [])
+            # Use rankingColumns if provided (when combined with project data), otherwise use columns (ranking-only data)
+            ranking_columns = file_data.get('rankingColumns', []) if has_project_data else file_data.get('columns', [])
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # Sheet 0: Ranking Columns
+                # Save project data first if available
+                if has_project_data:
+                    rows = file_data.get('rows', [])
+                    project_columns = file_data.get('columns', [])
+                    
+                    # Project columns are already separate from ranking columns
+                    project_cols_filtered = project_columns if isinstance(project_columns, list) else []
+                    
+                    df = pd.DataFrame(rows)
+                    
+                    # Determine column order: rowNo first, then project columns
+                    if project_cols_filtered:
+                        col_order = ['rowNo'] + [c for c in project_cols_filtered if c != 'rowNo']
+                    elif len(rows) > 0:
+                        all_keys = list(rows[0].keys())
+                        if 'rowNo' in all_keys:
+                            other_keys = [k for k in all_keys if k != 'rowNo']
+                            col_order = ['rowNo'] + other_keys
+                        else:
+                            col_order = all_keys
+                    else:
+                        col_order = None
+                    
+                    # Reorder DataFrame columns if order is determined
+                    if col_order:
+                        # Ensure all columns from col_order exist in df
+                        for col in col_order:
+                            if col not in df.columns:
+                                df[col] = pd.NA
+                        # Get final column order: rowNo first, then ordered columns, then any remaining
+                        final_cols = []
+                        if 'rowNo' in df.columns:
+                            final_cols.append('rowNo')
+                        for col in col_order:
+                            if col != 'rowNo' and col in df.columns:
+                                final_cols.append(col)
+                        # Add any remaining columns not in col_order
+                        for col in df.columns:
+                            if col not in final_cols:
+                                final_cols.append(col)
+                        df = df[final_cols]
+                    
+                    df.to_excel(writer, index=False, sheet_name='Project')
+                
+                # Save ranking sheets
+                # Sheet: Ranking Columns
                 if ranking_columns:
                     df_columns = pd.DataFrame([
                         {'column': col}
@@ -341,7 +391,7 @@ def save():
                     ])
                     df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
                 
-                # Sheet 1: Criteria Weights
+                # Sheet: Criteria Weights
                 if criteria_weights:
                     df_weights = pd.DataFrame([
                         {'criteria': k, 'weight': v}
@@ -349,7 +399,7 @@ def save():
                     ])
                     df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
                 
-                # Sheet 2: Alternatives Scores - New format: table with alternative column + criteria columns
+                # Sheet: Alternatives Scores - New format: table with alternative column + criteria columns
                 if alternatives_scores:
                     # Get all unique criteria from all alternatives
                     all_criteria = set()
@@ -387,7 +437,7 @@ def save():
                         df_scores = pd.DataFrame(columns=['alternative'])
                         df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
                 
-                # Sheet 3: Ranking Result
+                # Sheet: Ranking Result
                 if ranking_result and ranking_result.get('ranking'):
                     df_result = pd.DataFrame(ranking_result['ranking'])
                     df_result.to_excel(writer, sheet_name='RankingResult', index=False)

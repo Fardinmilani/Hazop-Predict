@@ -500,7 +500,36 @@ function FilePage() {
             }
           }
         } else if (dataType === 'project') {
-          // Save project as Excel
+          // Save project as Excel - include ranking data if available
+          // Fetch ranking data to include in the save
+          let rankingData = null
+          try {
+            const rankResponse = await rankingAPI.get()
+            if (rankResponse.data.success && rankResponse.data.data) {
+              const rankData = rankResponse.data.data
+              // Only include if there's actual ranking data
+              if ((rankData.criteriaWeights && Object.keys(rankData.criteriaWeights).length > 0) ||
+                  (rankData.alternativesScores && Object.keys(rankData.alternativesScores).length > 0) ||
+                  rankData.rankingResult) {
+                rankingData = rankData
+              }
+            }
+          } catch (err) {
+            console.error('Error fetching ranking data:', err)
+          }
+
+          // Combine project and ranking data
+          // Preserve project columns in 'columns' and ranking columns in 'rankingColumns'
+          const combinedData = {
+            ...dataToSave.project,
+            ...(rankingData && {
+              criteriaWeights: rankingData.criteriaWeights || {},
+              alternativesScores: rankingData.alternativesScores || {},
+              rankingResult: rankingData.rankingResult || null,
+              rankingColumns: rankingData.columns || [] // Store ranking columns separately
+            })
+          }
+
           if ('showSaveFilePicker' in window) {
             try {
               const fileHandle = await window.showSaveFilePicker({
@@ -512,7 +541,7 @@ function FilePage() {
               })
 
               const saveData = {
-                data: dataToSave.project,
+                data: combinedData,
                 filename: fileHandle.name
               }
 
@@ -549,8 +578,37 @@ function FilePage() {
               return
             }
 
+            // Fetch ranking data to include in the save
+            let rankingData = null
+            try {
+              const rankResponse = await rankingAPI.get()
+              if (rankResponse.data.success && rankResponse.data.data) {
+                const rankData = rankResponse.data.data
+                // Only include if there's actual ranking data
+                if ((rankData.criteriaWeights && Object.keys(rankData.criteriaWeights).length > 0) ||
+                    (rankData.alternativesScores && Object.keys(rankData.alternativesScores).length > 0) ||
+                    rankData.rankingResult) {
+                  rankingData = rankData
+                }
+              }
+            } catch (err) {
+              console.error('Error fetching ranking data:', err)
+            }
+
+            // Combine project and ranking data
+            // Preserve project columns in 'columns' and ranking columns in 'rankingColumns'
+            const combinedData = {
+              ...dataToSave.project,
+              ...(rankingData && {
+                criteriaWeights: rankingData.criteriaWeights || {},
+                alternativesScores: rankingData.alternativesScores || {},
+                rankingResult: rankingData.rankingResult || null,
+                rankingColumns: rankingData.columns || [] // Store ranking columns separately
+              })
+            }
+
             const saveData = {
-              data: dataToSave.project,
+              data: combinedData,
               filename: filename
             }
 
