@@ -188,7 +188,8 @@ def get_ranking():
             'criteriaWeights': {},
             'alternativesScores': {},
             'rankingResult': None,
-            'columns': []
+            'columns': [],
+            'groups': []
         }
         
         if filepath.exists():
@@ -199,6 +200,7 @@ def get_ranking():
                 alternatives_scores = {}
                 ranking_result = None
                 ranking_columns = []
+                ranking_groups = []
                 
                 # Sheet 0: Ranking Columns (optional)
                 if 'RankingColumns' in xls.sheet_names:
@@ -209,7 +211,30 @@ def get_ranking():
                             if pd.notna(col) and col:
                                 ranking_columns.append(col)
                 
-                # Sheet 1: Criteria Weights
+                # Sheet 1: Ranking Groups (optional)
+                if 'RankingGroups' in xls.sheet_names:
+                    try:
+                        df_groups = pd.read_excel(filepath, sheet_name='RankingGroups')
+                        for _, row in df_groups.iterrows():
+                            if 'group_name' in row and 'columns' in row:
+                                try:
+                                    group_name = str(row['group_name']).strip()
+                                    columns_str = str(row['columns']).strip()
+                                    if pd.notna(group_name) and pd.notna(columns_str):
+                                        # Parse columns string (e.g., "col1,col2,col3")
+                                        columns = [col.strip() for col in columns_str.split(',') if col.strip()]
+                                        ranking_groups.append({
+                                            'name': group_name,
+                                            'columns': columns
+                                        })
+                                except (ValueError, TypeError) as e:
+                                    print(f"Error parsing group row: {e}")
+                                    continue
+                    except Exception as e:
+                        print(f"Error loading RankingGroups sheet: {e}")
+                        # Continue without loading groups
+                
+                # Sheet 2: Criteria Weights
                 if 'CriteriaWeights' in xls.sheet_names:
                     df_weights = pd.read_excel(filepath, sheet_name='CriteriaWeights')
                     for _, row in df_weights.iterrows():
@@ -222,7 +247,7 @@ def get_ranking():
                             except (ValueError, TypeError):
                                 continue
                 
-                # Sheet 2: Alternatives Scores
+                # Sheet 3: Alternatives Scores
                 if 'AlternativesScores' in xls.sheet_names:
                     df_scores = pd.read_excel(filepath, sheet_name='AlternativesScores')
                     # Check if it's new format (table with alternative column + criteria columns)
@@ -267,7 +292,7 @@ def get_ranking():
                                 except (ValueError, TypeError):
                                     continue
                 
-                # Sheet 3: Ranking Result (optional)
+                # Sheet 4: Ranking Result (optional)
                 if 'RankingResult' in xls.sheet_names:
                     df_result = pd.read_excel(filepath, sheet_name='RankingResult')
                     ranking_result = {
@@ -284,7 +309,8 @@ def get_ranking():
                     'criteriaWeights': criteria_weights,
                     'alternativesScores': alternatives_scores,
                     'rankingResult': ranking_result,
-                    'columns': ranking_columns
+                    'columns': ranking_columns,
+                    'groups': ranking_groups
                 }
             except Exception as e:
                 # If parsing fails, return empty structure
@@ -292,7 +318,9 @@ def get_ranking():
                 ranking_data = {
                     'criteriaWeights': {},
                     'alternativesScores': {},
-                    'rankingResult': None
+                    'rankingResult': None,
+                    'columns': [],
+                    'groups': []
                 }
         else:
             # File doesn't exist - return empty structure
@@ -301,7 +329,8 @@ def get_ranking():
                 'criteriaWeights': {},
                 'alternativesScores': {},
                 'rankingResult': None,
-                'columns': []
+                'columns': [],
+                'groups': []
             }
         
         return jsonify({
@@ -316,7 +345,8 @@ def get_ranking():
                 'criteriaWeights': {},
                 'alternativesScores': {},
                 'rankingResult': None,
-                'columns': []
+                'columns': [],
+                'groups': []
             }
         }), 500
 
@@ -351,6 +381,7 @@ def delete_ranking():
             
             # Clear ranking sheets
             pd.DataFrame(columns=['column']).to_excel(writer, sheet_name='RankingColumns', index=False)
+            pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
             pd.DataFrame(columns=['criteria', 'weight']).to_excel(writer, sheet_name='CriteriaWeights', index=False)
             pd.DataFrame(columns=['alternative']).to_excel(writer, sheet_name='AlternativesScores', index=False)
             pd.DataFrame(columns=['alternative', 'score']).to_excel(writer, sheet_name='RankingResult', index=False)
@@ -740,6 +771,13 @@ def update_ranking():
         alternatives_scores = data.get('alternativesScores', {})
         ranking_result = data.get('rankingResult', None)
         ranking_columns = data.get('columns', [])
+        ranking_groups = data.get('groups', [])
+        
+        # Debug logging
+        print(f"Received data:")
+        print(f"  - columns: {ranking_columns}")
+        print(f"  - groups: {ranking_groups}")
+        print(f"  - criteria_weights: {criteria_weights}")
         
         DATA_DIR = Path(__file__).parent.parent.parent / 'data'
         DATA_DIR.mkdir(exist_ok=True)
@@ -811,7 +849,28 @@ def update_ranking():
                 ])
                 df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
             
-            # Sheet 1: Criteria Weights
+            # Sheet 1: Ranking Groups
+            print(f"Saving groups: {ranking_groups}")
+            if ranking_groups:
+                # Convert groups to a flat structure for Excel
+                groups_data = []
+                for group in ranking_groups:
+                    if 'name' in group and 'columns' in group and group['columns']:
+                        groups_data.append({
+                            'group_name': group['name'],
+                            'columns': ','.join(group['columns'])
+                        })
+                print(f"Groups data to save: {groups_data}")
+                if groups_data:
+                    df_groups = pd.DataFrame(groups_data)
+                    print(f"Saving DataFrame: {df_groups}")
+                    df_groups.to_excel(writer, sheet_name='RankingGroups', index=False)
+            else:
+                # Create empty RankingGroups sheet if no groups
+                print("Creating empty RankingGroups sheet")
+                pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
+            
+            # Sheet 2: Criteria Weights
             if criteria_weights:
                 df_weights = pd.DataFrame([
                     {'criteria': k, 'weight': v}
@@ -819,7 +878,7 @@ def update_ranking():
                 ])
                 df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
             
-            # Sheet 2: Alternatives Scores - New format: table with alternative column + criteria columns
+            # Sheet 3: Alternatives Scores - New format: table with alternative column + criteria columns
             # Sync with Project rows to ensure same number of rows
             if alternatives_scores:
                 # Get all unique criteria from all alternatives
@@ -898,7 +957,7 @@ def update_ranking():
                 df_scores = pd.DataFrame(scores_rows)
                 df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
             
-            # Sheet 3: Ranking Result
+            # Sheet 4: Ranking Result
             if ranking_result and ranking_result.get('ranking'):
                 df_result = pd.DataFrame(ranking_result['ranking'])
                 df_result.to_excel(writer, sheet_name='RankingResult', index=False)
@@ -918,7 +977,8 @@ def update_ranking():
                 'criteriaWeights': criteria_weights,
                 'alternativesScores': alternatives_scores,
                 'rankingResult': ranking_result,
-                'columns': ranking_columns
+                'columns': ranking_columns,
+                'groups': ranking_groups
             }
         })
     except Exception as e:

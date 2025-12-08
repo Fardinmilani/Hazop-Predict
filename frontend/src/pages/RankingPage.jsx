@@ -6,6 +6,7 @@ function RankingPage() {
   const [projectData, setProjectData] = useState([])
   const [columns, setColumns] = useState([])
   const [rankingColumns, setRankingColumns] = useState([])
+  const [columnGroups, setColumnGroups] = useState([]) // New state for column groups
   const [criteriaWeights, setCriteriaWeights] = useState({})
   const [alternativesScores, setAlternativesScores] = useState({})
   const [rankingResult, setRankingResult] = useState(null)
@@ -14,6 +15,7 @@ function RankingPage() {
   const [message, setMessage] = useState({ type: '', text: '' })
   const [showAddColumnModal, setShowAddColumnModal] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
+  const [newGroup, setNewGroup] = useState('') // New state for group selection
   
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
@@ -299,6 +301,8 @@ function RankingPage() {
           isSyncingRef.current = true
           setCriteriaWeights({})
           setRankingResult(null)
+          setRankingColumns([])
+          setColumnGroups([])
           // Sync alternatives with project structure if project has rows
           const rows = currentProjectRows || projectData
           if (rows && rows.length > 0) {
@@ -317,12 +321,17 @@ function RankingPage() {
           return
         }
         
-        // Load ranking columns
+        // Load ranking columns and groups
         if (data.columns && Array.isArray(data.columns) && data.columns.length > 0) {
           setRankingColumns(data.columns)
         } else {
-          // If no columns saved, start with empty array
           setRankingColumns([])
+        }
+        
+        if (data.groups && Array.isArray(data.groups) && data.groups.length > 0) {
+          setColumnGroups(data.groups)
+        } else {
+          setColumnGroups([])
         }
         
         if (hasCriteria) {
@@ -408,6 +417,8 @@ function RankingPage() {
         // If response is not successful, clear data and sync with project structure
         setCriteriaWeights({})
         setRankingResult(null)
+        setRankingColumns([])
+        setColumnGroups([])
         const rows = currentProjectRows || projectData
         if (rows && rows.length > 0) {
           isSyncingRef.current = true
@@ -442,6 +453,8 @@ function RankingPage() {
       // On error, clear data and sync with project structure
       setCriteriaWeights({})
       setRankingResult(null)
+      setRankingColumns([])
+      setColumnGroups([])
       const rows = currentProjectRows || projectData
       if (rows && rows.length > 0) {
         isSyncingRef.current = true
@@ -459,10 +472,11 @@ function RankingPage() {
     }
   }
 
-  const updateRanking = async (newCriteriaWeights, newAlternativesScores, newRankingResult, newColumns = null) => {
+  const updateRanking = async (newCriteriaWeights, newAlternativesScores, newRankingResult, newColumns = null, newGroups = null) => {
     try {
       const columnsToSave = newColumns !== null ? newColumns : rankingColumns
-      await rankingAPI.update(newCriteriaWeights, newAlternativesScores, newRankingResult, columnsToSave)
+      const groupsToSave = newGroups !== null ? newGroups : columnGroups
+      await rankingAPI.update(newCriteriaWeights, newAlternativesScores, newRankingResult, columnsToSave, groupsToSave)
       // Emit event to notify FilePage
       window.dispatchEvent(new CustomEvent('ranking-updated'))
     } catch (error) {
@@ -505,31 +519,54 @@ function RankingPage() {
       return
     }
     
-    if (rankingColumns.includes(newColumnName.trim())) {
+    const trimmedColumnName = newColumnName.trim()
+    const trimmedGroup = newGroup.trim()
+    
+    if (rankingColumns.includes(trimmedColumnName)) {
       setMessage({ type: 'error', text: 'Column already exists' })
       return
     }
     
-    const newColumns = [...rankingColumns, newColumnName.trim()]
+    const newColumns = [...rankingColumns, trimmedColumnName]
     setRankingColumns(newColumns)
+    
+    // Update groups
+    let newGroups = [...columnGroups]
+    if (trimmedGroup) {
+      const existingGroupIndex = newGroups.findIndex(g => g.name === trimmedGroup)
+      if (existingGroupIndex >= 0) {
+        newGroups[existingGroupIndex] = {
+          ...newGroups[existingGroupIndex],
+          columns: [...newGroups[existingGroupIndex].columns, trimmedColumnName]
+        }
+      } else {
+        newGroups.push({
+          name: trimmedGroup,
+          columns: [trimmedColumnName]
+        })
+      }
+    }
+    setColumnGroups(newGroups)
+    
     setNewColumnName('')
+    setNewGroup('')
     setShowAddColumnModal(false)
     
     // Clear weights and scores for this new column
     const newWeights = { ...criteriaWeights }
-    newWeights[newColumnName.trim()] = 0
+    newWeights[trimmedColumnName] = 0
     
     const newScores = { ...alternativesScores }
     Object.keys(newScores).forEach(alt => {
-      newScores[alt] = { ...newScores[alt], [newColumnName.trim()]: '' }
+      newScores[alt] = { ...newScores[alt], [trimmedColumnName]: '' }
     })
     
     setCriteriaWeights(newWeights)
     setAlternativesScores(newScores)
     
     // Save to backend
-    updateRanking(newWeights, newScores, rankingResult, newColumns)
-    setMessage({ type: 'success', text: `Column "${newColumnName.trim()}" added successfully` })
+    updateRanking(newWeights, newScores, rankingResult, newColumns, newGroups)
+    setMessage({ type: 'success', text: `Column "${trimmedColumnName}" added successfully` })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
 
@@ -540,6 +577,13 @@ function RankingPage() {
     
     const newColumns = rankingColumns.filter(col => col !== columnToDelete)
     setRankingColumns(newColumns)
+    
+    // Remove from groups
+    const newGroups = columnGroups.map(group => ({
+      ...group,
+      columns: group.columns.filter(col => col !== columnToDelete)
+    })).filter(group => group.columns.length > 0)
+    setColumnGroups(newGroups)
     
     // Remove from weights
     const newWeights = { ...criteriaWeights }
@@ -556,7 +600,7 @@ function RankingPage() {
     setAlternativesScores(newScores)
     
     // Save to backend
-    updateRanking(newWeights, newScores, rankingResult, newColumns)
+    updateRanking(newWeights, newScores, rankingResult, newColumns, newGroups)
     setMessage({ type: 'success', text: `Column "${columnToDelete}" deleted successfully` })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
@@ -642,7 +686,41 @@ function RankingPage() {
           <h3 className="text-lg font-semibold mb-4">Criteria Weights</h3>
           {rankingColumns.length === 0 ? (
             <p className="text-gray-500">No columns added. Click "Add Column" to add ranking criteria.</p>
+          ) : columnGroups.length > 0 ? (
+            // Grouped weights display
+            columnGroups.map((group) => (
+              <div key={group.name} className="mb-6">
+                <h4 className="text-md font-semibold mb-3 text-blue-600">{group.name}</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  {group.columns.map((col) => (
+                    <div key={col} className="relative">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          {col}
+                        </label>
+                        <button
+                          onClick={() => handleDeleteColumn(col)}
+                          className="text-red-500 hover:text-red-700 text-sm"
+                          title="Delete column"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={criteriaWeights[col] || ''}
+                        onChange={(e) => handleWeightChange(col, e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Weight"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
           ) : (
+            // Flat weights display
             <div className="grid grid-cols-3 gap-4">
               {rankingColumns.map((col) => (
                 <div key={col} className="relative">
@@ -679,14 +757,46 @@ function RankingPage() {
             <table className="min-w-full bg-white border border-gray-300">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Row No</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Alternative</th>
-                  {rankingColumns.map((col) => (
-                    <th key={col} className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                      {col}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300" rowSpan="2">Row No</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300" rowSpan="2">Alternative</th>
+                  {columnGroups.length > 0 ? (
+                    // Grouped header with borders and centered group names
+                    columnGroups.map((group, groupIndex) => (
+                      <th 
+                        key={group.name} 
+                        className={`px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                          groupIndex < columnGroups.length - 1 ? 'border-r border-gray-300' : ''
+                        }`}
+                        colSpan={group.columns.length}
+                      >
+                        {group.name}
+                      </th>
+                    ))
+                  ) : (
+                    // If no groups, span across all columns
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase" colSpan={rankingColumns.length}>
+                      Criteria
                     </th>
-                  ))}
+                  )}
                 </tr>
+                {columnGroups.length > 0 && (
+                  <tr className="bg-gray-100">
+                    {columnGroups.map((group, groupIndex) => 
+                      group.columns.map((col, colIndex) => (
+                        <th 
+                          key={col} 
+                          className={`px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                            colIndex === group.columns.length - 1 && groupIndex < columnGroups.length - 1 
+                              ? 'border-r border-gray-300' 
+                              : ''
+                          }`}
+                        >
+                          {col}
+                        </th>
+                      ))
+                    )}
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {Object.keys(alternativesScores).sort((a, b) => {
@@ -698,19 +808,44 @@ function RankingPage() {
                   const rowNo = extractRowNoFromKey(alt) || ''
                   return (
                     <tr key={alt}>
-                      <td className="px-4 py-3 border-b font-medium text-gray-600">{rowNo}</td>
-                      <td className="px-4 py-3 border-b font-medium">{alt}</td>
-                      {rankingColumns.map((col) => (
-                        <td key={col} className="px-4 py-3 border-b">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={alternativesScores[alt][col] || ''}
-                            onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </td>
-                      ))}
+                      <td className="px-4 py-3 border-b border-r font-medium text-gray-600">{rowNo}</td>
+                      <td className="px-4 py-3 border-b border-r font-medium">{alt}</td>
+                      {columnGroups.length > 0 ? (
+                        // Use grouped columns with borders
+                        columnGroups.map((group, groupIndex) => 
+                          group.columns.map((col, colIndex) => (
+                            <td 
+                              key={col} 
+                              className={`px-4 py-3 border-b ${
+                                colIndex === group.columns.length - 1 && groupIndex < columnGroups.length - 1 
+                                  ? 'border-r border-gray-300' 
+                                  : ''
+                              }`}
+                            >
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={alternativesScores[alt][col] || ''}
+                                onChange={(e) => handleScoreChange(alt, col, e.target.value)}
+                                className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </td>
+                          ))
+                        )
+                      ) : (
+                        // Fallback to all columns if no groups
+                        rankingColumns.map((col) => (
+                          <td key={col} className="px-4 py-3 border-b">
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={alternativesScores[alt][col] || ''}
+                              onChange={(e) => handleScoreChange(alt, col, e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </td>
+                        ))
+                      )}
                     </tr>
                   )
                 })}
@@ -795,6 +930,7 @@ function RankingPage() {
                 onClick={() => {
                   setShowAddColumnModal(false)
                   setNewColumnName('')
+                  setNewGroup('')
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -802,20 +938,41 @@ function RankingPage() {
               </button>
             </div>
             <p className="text-gray-600 mb-4">Enter a name for the new ranking criteria column:</p>
-            <input
-              type="text"
-              value={newColumnName}
-              onChange={(e) => setNewColumnName(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter') {
-                  handleAddColumn()
-                }
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-              placeholder="Column name (e.g., Cost, Quality, Safety)"
-              autoFocus
-            />
-            <div className="flex space-x-2">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Column Name</label>
+                <input
+                  type="text"
+                  value={newColumnName}
+                  onChange={(e) => setNewColumnName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleAddColumn()
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Column name (e.g., Cost, Quality, Safety)"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Group (Optional)</label>
+                <input
+                  type="text"
+                  value={newGroup}
+                  onChange={(e) => setNewGroup(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleAddColumn()
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Group name (e.g., Economic, Technical, Safety)"
+                />
+                <p className="text-xs text-gray-500 mt-1">Columns will be grouped under this name in the table header</p>
+              </div>
+            </div>
+            <div className="flex space-x-2 mt-6">
               <button
                 onClick={handleAddColumn}
                 className="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -826,6 +983,7 @@ function RankingPage() {
                 onClick={() => {
                   setShowAddColumnModal(false)
                   setNewColumnName('')
+                  setNewGroup('')
                 }}
                 className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
               >
