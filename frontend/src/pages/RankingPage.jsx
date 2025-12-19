@@ -711,7 +711,7 @@ function RankingPage() {
                         step="0.1"
                         value={criteriaWeights[col] || ''}
                         onChange={(e) => handleWeightChange(col, e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-auto max-w-[120px] px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Weight"
                       />
                     </div>
@@ -754,17 +754,17 @@ function RankingPage() {
         <div className="mb-6">
           <h3 className="text-lg font-semibold mb-4">Alternatives Scores</h3>
           <div className="overflow-x-auto">
-            <table className="min-w-full bg-white border border-gray-300">
+            <table className="w-full bg-white border border-gray-300" style={{ tableLayout: 'auto' }}>
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300" rowSpan="2">Row No</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300" rowSpan="2">Alternative</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[80px]" rowSpan="2">Row No</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]" rowSpan="2">Alternative</th>
                   {columnGroups.length > 0 ? (
                     // Grouped header with borders and centered group names
                     columnGroups.map((group, groupIndex) => (
                       <th 
                         key={group.name} 
-                        className={`px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                        className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
                           groupIndex < columnGroups.length - 1 ? 'border-r border-gray-300' : ''
                         }`}
                         colSpan={group.columns.length}
@@ -774,7 +774,7 @@ function RankingPage() {
                     ))
                   ) : (
                     // If no groups, span across all columns
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase" colSpan={rankingColumns.length}>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase" colSpan={rankingColumns.length}>
                       Criteria
                     </th>
                   )}
@@ -785,7 +785,7 @@ function RankingPage() {
                       group.columns.map((col, colIndex) => (
                         <th 
                           key={col} 
-                          className={`px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
                             colIndex === group.columns.length - 1 && groupIndex < columnGroups.length - 1 
                               ? 'border-r border-gray-300' 
                               : ''
@@ -808,15 +808,15 @@ function RankingPage() {
                   const rowNo = extractRowNoFromKey(alt) || ''
                   return (
                     <tr key={alt}>
-                      <td className="px-4 py-3 border-b border-r font-medium text-gray-600">{rowNo}</td>
-                      <td className="px-4 py-3 border-b border-r font-medium">{alt}</td>
+                      <td className="px-3 py-3 border-b border-r font-medium text-gray-600 w-[80px]">{rowNo}</td>
+                      <td className="px-3 py-3 border-b border-r font-medium w-[150px] text-sm">{alt}</td>
                       {columnGroups.length > 0 ? (
                         // Use grouped columns with borders
                         columnGroups.map((group, groupIndex) => 
                           group.columns.map((col, colIndex) => (
                             <td 
                               key={col} 
-                              className={`px-4 py-3 border-b ${
+                              className={`px-3 py-3 border-b w-[120px] ${
                                 colIndex === group.columns.length - 1 && groupIndex < columnGroups.length - 1 
                                   ? 'border-r border-gray-300' 
                                   : ''
@@ -835,7 +835,7 @@ function RankingPage() {
                       ) : (
                         // Fallback to all columns if no groups
                         rankingColumns.map((col) => (
-                          <td key={col} className="px-4 py-3 border-b">
+                          <td key={col} className="px-3 py-3 border-b w-[120px]">
                             <input
                               type="number"
                               step="0.1"

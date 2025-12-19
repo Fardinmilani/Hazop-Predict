@@ -6,6 +6,8 @@ Handles AHP and other ranking algorithms
 from flask import Blueprint, request, jsonify
 import sys
 from pathlib import Path
+import threading
+import time
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from utils.ahp import ahp_ranking, calculate_consistency_ratio, create_pairwise_matrix
@@ -16,6 +18,9 @@ from openpyxl.styles import Alignment
 ranking_bp = Blueprint('ranking', __name__)
 PROJECT_FILE = 'project.xlsx'  # Ranking data is now stored in project.xlsx
 OLD_RANKING_FILE = 'ranking.xlsx'  # Old file name for migration
+
+# File lock to prevent concurrent writes
+_file_lock = threading.Lock()
 
 def migrate_ranking_data():
     """Migrate ranking data from ranking.xlsx to project.xlsx if needed"""
@@ -414,21 +419,29 @@ def update_ranking_cell():
     (row = alternative, column = criteria) to avoid shuffling or losing existing
     scores when a single cell changes.
     """
+    # Acquire lock to prevent concurrent file access
+    _file_lock.acquire()
     try:
         data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
         cell_type = data.get('type')  # 'score' or 'weight'
         alternative = data.get('alternative', '')
         criteria = data.get('criteria', '')
         value = data.get('value', '')
+        
+        print(f"DEBUG: update_ranking_cell called with type={cell_type}, alternative={alternative}, criteria={criteria}, value={value}")
 
         DATA_DIR = Path(__file__).parent.parent.parent / 'data'
         DATA_DIR.mkdir(exist_ok=True)
         filepath = DATA_DIR / PROJECT_FILE
 
-        # --- Load existing meta data (columns, weights, result) ---
+        # --- Load existing meta data (columns, weights, result, groups) ---
         ranking_columns = []
         criteria_weights = {}
         ranking_result = None
+        ranking_groups = []  # Add groups list
         df_scores = None
 
         if filepath.exists():
@@ -443,6 +456,29 @@ def update_ranking_cell():
                             col_name = str(row['column']).strip()
                             if col_name:
                                 ranking_columns.append(col_name)
+
+                # Ranking groups (preserve groups)
+                if 'RankingGroups' in xls.sheet_names:
+                    try:
+                        df_groups = pd.read_excel(filepath, sheet_name='RankingGroups')
+                        for _, row in df_groups.iterrows():
+                            if 'group_name' in row and 'columns' in row:
+                                try:
+                                    group_name = str(row['group_name']).strip()
+                                    columns_str = str(row['columns']).strip()
+                                    if pd.notna(group_name) and pd.notna(columns_str):
+                                        # Parse columns string (e.g., "col1,col2,col3")
+                                        columns = [col.strip() for col in columns_str.split(',') if col.strip()]
+                                        ranking_groups.append({
+                                            'name': group_name,
+                                            'columns': columns
+                                        })
+                                except (ValueError, TypeError) as e:
+                                    print(f"Error parsing group row: {e}")
+                                    continue
+                    except Exception as e:
+                        print(f"Error loading RankingGroups sheet: {e}")
+                        # Continue without loading groups
 
                 # Criteria weights
                 if 'CriteriaWeights' in xls.sheet_names:
@@ -534,13 +570,16 @@ def update_ranking_cell():
 
         if project_rows:
             # Build a set of existing alternative keys in the current scores table
-            existing_alternatives = set(
-                df_scores['alternative']
-                .dropna()
-                .astype(str)
-                .str.strip()
-                .tolist()
-            )
+            if df_scores is not None and not df_scores.empty and 'alternative' in df_scores.columns:
+                existing_alternatives = set(
+                    df_scores['alternative']
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .tolist()
+                )
+            else:
+                existing_alternatives = set()
 
             # For each project row, ensure there is a corresponding alternative row
             for idx, row in enumerate(project_rows):
@@ -577,6 +616,15 @@ def update_ranking_cell():
 
         elif cell_type == 'score':
             if alternative and criteria:
+                # Ensure df_scores is properly initialized
+                if df_scores is None:
+                    base_cols = ['alternative'] + list(ranking_columns)
+                    df_scores = pd.DataFrame(columns=base_cols)
+                
+                # Ensure 'alternative' column exists
+                if 'alternative' not in df_scores.columns:
+                    df_scores.insert(0, 'alternative', None)
+                
                 # Ensure criteria column exists
                 if criteria not in df_scores.columns:
                     df_scores[criteria] = pd.NA
@@ -584,7 +632,12 @@ def update_ranking_cell():
                         ranking_columns.append(criteria)
 
                 alt_str = str(alternative).strip()
-                mask = df_scores['alternative'].astype(str).str.strip() == alt_str
+                
+                # Safely create mask - handle empty DataFrame case
+                if df_scores.empty or df_scores.shape[0] == 0:
+                    mask = pd.Series([], dtype=bool)
+                else:
+                    mask = df_scores['alternative'].astype(str).str.strip() == alt_str
 
                 if not mask.any():
                     # Add a new row for this alternative
@@ -594,91 +647,179 @@ def update_ranking_cell():
                         [df_scores, pd.DataFrame([new_row])],
                         ignore_index=True
                     )
-                    mask = df_scores['alternative'].astype(str).str.strip() == alt_str
+                    # Recreate mask after adding row
+                    if df_scores.shape[0] > 0:
+                        mask = df_scores['alternative'].astype(str).str.strip() == alt_str
+                    else:
+                        mask = pd.Series([], dtype=bool)
 
                 try:
                     score_value = float(value) if value != '' else 0
                 except (ValueError, TypeError):
                     score_value = 0
 
-                df_scores.loc[mask, criteria] = score_value
+                # Only update if we have rows and a valid mask
+                if df_scores.shape[0] > 0 and mask.any():
+                    df_scores.loc[mask, criteria] = score_value
+                elif df_scores.shape[0] == 0:
+                    # If DataFrame is empty, add the row with the score
+                    new_row = {col_name: pd.NA for col_name in df_scores.columns}
+                    new_row['alternative'] = alt_str
+                    new_row[criteria] = score_value
+                    df_scores = pd.concat(
+                        [df_scores, pd.DataFrame([new_row])],
+                        ignore_index=True
+                    )
 
         # Normalize column order: alternative + sorted criteria columns
+        # Ensure df_scores is not None before accessing columns
+        if df_scores is None:
+            df_scores = pd.DataFrame(columns=['alternative'])
+        
         criteria_cols_in_df = [c for c in df_scores.columns if c != 'alternative']
         all_criteria_cols = sorted(set(criteria_cols_in_df + list(ranking_columns)))
+        
+        # Ensure 'alternative' column exists
+        if 'alternative' not in df_scores.columns:
+            df_scores.insert(0, 'alternative', None)
+        
         if df_scores.shape[0] > 0:
+            # Ensure all columns exist before reordering
+            for col in all_criteria_cols:
+                if col not in df_scores.columns:
+                    df_scores[col] = pd.NA
             df_scores = df_scores[['alternative'] + all_criteria_cols]
         else:
             df_scores = pd.DataFrame(columns=['alternative'] + all_criteria_cols)
 
         # --- Save back to Excel - preserve project data and sync AlternativesScores ---
-        # Load existing project data
-        project_rows = []
-        if filepath.exists():
-            try:
-                project_df = pd.read_excel(filepath, sheet_name='Project')
-                project_rows = project_df.to_dict('records')
-            except:
-                try:
-                    project_df = pd.read_excel(filepath, sheet_name='Sheet1')
-                    project_rows = project_df.to_dict('records')
-                except:
-                    project_rows = []
+        # Use project_rows that were already loaded above (lines 523-533)
+        # CRITICAL: Never overwrite project_rows if we already have data loaded
+        # Only reload if we don't have project_rows yet (shouldn't happen, but safety check)
+        if not project_rows:
+            # Retry mechanism for corrupted files
+            max_retries = 3
+            retry_delay = 0.1
+            for attempt in range(max_retries):
+                if filepath.exists():
+                    try:
+                        project_df = pd.read_excel(filepath, sheet_name='Project', engine='openpyxl')
+                        project_rows = project_df.to_dict('records')
+                        if project_rows:
+                            print(f"Reloaded project_rows: {len(project_rows)} rows (attempt {attempt + 1})")
+                            break
+                    except Exception as e:
+                        print(f"Error reloading Project sheet (attempt {attempt + 1}): {str(e)}")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            try:
+                                project_df = pd.read_excel(filepath, sheet_name='Sheet1', engine='openpyxl')
+                                project_rows = project_df.to_dict('records')
+                                if project_rows:
+                                    print(f"Reloaded project_rows from Sheet1: {len(project_rows)} rows")
+                                    break
+                            except Exception as e2:
+                                print(f"Error reloading Sheet1: {str(e2)}")
+                                project_rows = []
+                else:
+                    break
+        else:
+            print(f"Using existing project_rows: {len(project_rows)} rows")
         
         # Sync AlternativesScores with Project rows - ensure same number of rows
+        # Ensure all_criteria_cols is defined (it should be defined above, but double-check)
+        # Recalculate to include any new criteria that might have been added
+        if df_scores is not None and not df_scores.empty:
+            criteria_cols_in_df = [c for c in df_scores.columns if c != 'alternative']
+        else:
+            criteria_cols_in_df = []
+        all_criteria_cols = sorted(set(criteria_cols_in_df + list(ranking_columns)))
+        
         if project_rows and df_scores is not None:
             num_project_rows = len(project_rows)
             
             # Get existing alternatives as dict for quick lookup
             existing_alternatives_dict = {}
-            if not df_scores.empty:
-                for _, alt_row in df_scores.iterrows():
-                    alt_key = str(alt_row.get('alternative', '')).strip()
-                    if alt_key:
-                        existing_alternatives_dict[alt_key] = alt_row.to_dict()
+            if not df_scores.empty and 'alternative' in df_scores.columns:
+                try:
+                    for _, alt_row in df_scores.iterrows():
+                        alt_key = str(alt_row.get('alternative', '')).strip()
+                        if alt_key:
+                            existing_alternatives_dict[alt_key] = alt_row.to_dict()
+                except Exception as e:
+                    print(f"Error building existing alternatives dict: {str(e)}")
+                    existing_alternatives_dict = {}
             
             # Build new alternatives list matching project rows
             new_alternatives = []
-            for idx, row in enumerate(project_rows):
-                row_no = row.get('rowNo', idx + 1)
-                alt_key = f"Alternative {row_no}"
-                
-                # Use existing data if available, otherwise create new
-                if alt_key in existing_alternatives_dict:
-                    alt_data = existing_alternatives_dict[alt_key].copy()
-                    alt_data['alternative'] = alt_key  # Ensure alternative key is correct
-                    new_alternatives.append(alt_data)
-                else:
-                    # Create new alternative row
-                    new_alt = {'alternative': alt_key}
-                    for col in all_criteria_cols:
-                        new_alt[col] = pd.NA
-                    new_alternatives.append(new_alt)
+            try:
+                for idx, row in enumerate(project_rows):
+                    row_no = row.get('rowNo', idx + 1)
+                    try:
+                        row_no_int = int(row_no)
+                    except (TypeError, ValueError):
+                        row_no_int = idx + 1
+                    alt_key = f"Alternative {row_no_int}"
+                    
+                    # Use existing data if available, otherwise create new
+                    if alt_key in existing_alternatives_dict:
+                        alt_data = existing_alternatives_dict[alt_key].copy()
+                        alt_data['alternative'] = alt_key  # Ensure alternative key is correct
+                        new_alternatives.append(alt_data)
+                    else:
+                        # Create new alternative row
+                        new_alt = {'alternative': alt_key}
+                        for col in all_criteria_cols:
+                            new_alt[col] = pd.NA
+                        new_alternatives.append(new_alt)
+            except Exception as e:
+                print(f"Error building new alternatives list: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
             
             # Create DataFrame from synced alternatives
             if new_alternatives:
-                df_scores = pd.DataFrame(new_alternatives)
-                # Ensure all columns exist
-                required_cols = ['alternative'] + all_criteria_cols
-                for col in required_cols:
-                    if col not in df_scores.columns:
-                        df_scores[col] = pd.NA
-                df_scores = df_scores[required_cols]
+                try:
+                    df_scores = pd.DataFrame(new_alternatives)
+                    # Ensure all columns exist
+                    required_cols = ['alternative'] + all_criteria_cols
+                    for col in required_cols:
+                        if col not in df_scores.columns:
+                            df_scores[col] = pd.NA
+                    df_scores = df_scores[required_cols]
+                except Exception as e:
+                    print(f"Error creating synced DataFrame: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
             else:
                 df_scores = pd.DataFrame(columns=['alternative'] + all_criteria_cols)
         elif project_rows and df_scores is None:
             # No alternatives scores yet, create based on project rows
             new_alternatives = []
-            for idx, row in enumerate(project_rows):
-                row_no = row.get('rowNo', idx + 1)
-                alt_key = f"Alternative {row_no}"
-                new_alt = {'alternative': alt_key}
-                for col in all_criteria_cols:
-                    new_alt[col] = pd.NA
-                new_alternatives.append(new_alt)
-            df_scores = pd.DataFrame(new_alternatives)
-            if all_criteria_cols:
-                df_scores = df_scores[['alternative'] + all_criteria_cols]
+            try:
+                for idx, row in enumerate(project_rows):
+                    row_no = row.get('rowNo', idx + 1)
+                    try:
+                        row_no_int = int(row_no)
+                    except (TypeError, ValueError):
+                        row_no_int = idx + 1
+                    alt_key = f"Alternative {row_no_int}"
+                    new_alt = {'alternative': alt_key}
+                    for col in all_criteria_cols:
+                        new_alt[col] = pd.NA
+                    new_alternatives.append(new_alt)
+                df_scores = pd.DataFrame(new_alternatives)
+                if all_criteria_cols:
+                    df_scores = df_scores[['alternative'] + all_criteria_cols]
+            except Exception as e:
+                print(f"Error creating alternatives from project rows: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
         
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
             # Preserve project data with column order
@@ -722,12 +863,47 @@ def update_ranking_cell():
                         df_project = df_project[cols]
                     df_project.to_excel(writer, sheet_name='Project', index=False)
             else:
-                pd.DataFrame().to_excel(writer, sheet_name='Project', index=False)
+                # If project_rows is empty, try to preserve existing Project sheet
+                if filepath.exists():
+                    try:
+                        # Load existing Project sheet and preserve it
+                        df_existing = pd.read_excel(filepath, sheet_name='Project')
+                        df_existing.to_excel(writer, sheet_name='Project', index=False)
+                    except:
+                        try:
+                            # Try Sheet1 as fallback
+                            df_existing = pd.read_excel(filepath, sheet_name='Sheet1')
+                            df_existing.to_excel(writer, sheet_name='Project', index=False)
+                        except:
+                            # Only create empty sheet if file doesn't exist or both sheets fail
+                            pd.DataFrame().to_excel(writer, sheet_name='Project', index=False)
+                else:
+                    # File doesn't exist, create empty sheet
+                    pd.DataFrame().to_excel(writer, sheet_name='Project', index=False)
             
             # Save ranking data
             if ranking_columns:
                 df_columns = pd.DataFrame([{'column': col} for col in ranking_columns])
                 df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
+
+            # Save ranking groups (preserve groups)
+            if ranking_groups:
+                groups_data = []
+                for group in ranking_groups:
+                    if 'name' in group and 'columns' in group and group['columns']:
+                        groups_data.append({
+                            'group_name': group['name'],
+                            'columns': ','.join(group['columns'])
+                        })
+                if groups_data:
+                    df_groups = pd.DataFrame(groups_data)
+                    df_groups.to_excel(writer, sheet_name='RankingGroups', index=False)
+                else:
+                    # Create empty RankingGroups sheet if no groups
+                    pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
+            else:
+                # Create empty RankingGroups sheet if no groups
+                pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
 
             if criteria_weights:
                 df_weights = pd.DataFrame(
@@ -737,12 +913,27 @@ def update_ranking_cell():
 
             # AlternativesScores sheet (always wide format, synced with Project)
             if df_scores is not None:
-                if df_scores.empty:
-                    pd.DataFrame(columns=['alternative'] + all_criteria_cols).to_excel(
-                        writer, sheet_name='AlternativesScores', index=False
-                    )
-                else:
-                    df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
+                try:
+                    if df_scores.empty:
+                        # Ensure all_criteria_cols is defined
+                        if 'all_criteria_cols' not in locals():
+                            all_criteria_cols = sorted(list(ranking_columns))
+                        pd.DataFrame(columns=['alternative'] + all_criteria_cols).to_excel(
+                            writer, sheet_name='AlternativesScores', index=False
+                        )
+                    else:
+                        df_scores.to_excel(writer, sheet_name='AlternativesScores', index=False)
+                except Exception as e:
+                    print(f"Error saving AlternativesScores: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    # Fallback: save empty structure
+                    try:
+                        pd.DataFrame(columns=['alternative'] + list(ranking_columns)).to_excel(
+                            writer, sheet_name='AlternativesScores', index=False
+                        )
+                    except:
+                        pass
 
             if ranking_result and ranking_result.get('ranking'):
                 df_result = pd.DataFrame(ranking_result['ranking'])
@@ -759,12 +950,25 @@ def update_ranking_cell():
         return jsonify({'success': True, 'message': 'Cell updated successfully'})
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        error_trace = traceback.format_exc()
+        print(f"ERROR in update_ranking_cell: {str(e)}")
+        print(f"Traceback:\n{error_trace}")
+        # Return error with details for debugging
+        return jsonify({
+            'success': False, 
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'traceback': error_trace  # Include traceback in response for debugging
+        }), 500
+    finally:
+        # Always release lock, even if an error occurs
+        _file_lock.release()
 
 @ranking_bp.route('/update', methods=['POST'])
 def update_ranking():
     """Update ranking data and save to Excel"""
+    # Acquire lock to prevent concurrent file access
+    _file_lock.acquire()
     try:
         data = request.json
         criteria_weights = data.get('criteriaWeights', {})
@@ -839,7 +1043,23 @@ def update_ranking():
                         df_project = df_project[cols]
                     df_project.to_excel(writer, sheet_name='Project', index=False)
             else:
-                pd.DataFrame().to_excel(writer, sheet_name='Project', index=False)
+                # If project_rows is empty, try to preserve existing Project sheet
+                if filepath.exists():
+                    try:
+                        # Load existing Project sheet and preserve it
+                        df_existing = pd.read_excel(filepath, sheet_name='Project')
+                        df_existing.to_excel(writer, sheet_name='Project', index=False)
+                    except:
+                        try:
+                            # Try Sheet1 as fallback
+                            df_existing = pd.read_excel(filepath, sheet_name='Sheet1')
+                            df_existing.to_excel(writer, sheet_name='Project', index=False)
+                        except:
+                            # Only create empty sheet if file doesn't exist or both sheets fail
+                            pd.DataFrame().to_excel(writer, sheet_name='Project', index=False)
+                else:
+                    # File doesn't exist, create empty sheet
+                    pd.DataFrame().to_excel(writer, sheet_name='Project', index=False)
             
             # Sheet 0: Ranking Columns
             if ranking_columns:
@@ -986,4 +1206,7 @@ def update_ranking():
             'success': False,
             'error': str(e)
         }), 500
+    finally:
+        # Always release lock, even if an error occurs
+        _file_lock.release()
 

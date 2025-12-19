@@ -178,7 +178,7 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
                         step="any"
                         value={cellValue}
                         onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
-                        className="w-full min-w-[100px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-auto max-w-[120px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Enter number..."
                       />
                     ) : (
