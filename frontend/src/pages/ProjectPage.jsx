@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { projectAPI, libraryAPI, rankingAPI } from '../utils/api'
 import DataTable from '../components/DataTable'
 import { AlertCircle, X, Plus } from 'lucide-react'
+import { getLikelihoodFromSW } from '../utils/riskMatrix'
 
 function ProjectPage() {
   const [rows, setRows] = useState([])
@@ -17,6 +18,35 @@ function ProjectPage() {
   const [showAddToLibraryModal, setShowAddToLibraryModal] = useState(false)
   const [columnToAddToLibrary, setColumnToAddToLibrary] = useState(null)
   const [addToLibraryMode, setAddToLibraryMode] = useState(null) // 'replace' or 'merge'
+
+  // Required built-in columns
+  const REQUIRED_COLUMNS = ['S', 'W', 'likelihood']
+
+  // Normalize project data: ensure required columns exist and compute likelihood
+  const normalizeProject = (rows, columns) => {
+    // Ensure required columns are in the columns array
+    const normalizedColumns = [...columns]
+    REQUIRED_COLUMNS.forEach(col => {
+      if (!normalizedColumns.includes(col)) {
+        normalizedColumns.push(col)
+      }
+    })
+
+    // Ensure all rows have keys for all columns and compute likelihood
+    const normalizedRows = rows.map(row => {
+      const normalizedRow = { ...row }
+      normalizedColumns.forEach(col => {
+        if (!(col in normalizedRow)) {
+          normalizedRow[col] = ''
+        }
+      })
+      // Compute likelihood from S and W
+      normalizedRow.likelihood = getLikelihoodFromSW(normalizedRow.S, normalizedRow.W)
+      return normalizedRow
+    })
+
+    return { rows: normalizedRows, columns: normalizedColumns }
+  }
 
   useEffect(() => {
     const loadData = async () => {
@@ -37,11 +67,15 @@ function ProjectPage() {
         ...row,
         rowNo: row.rowNo || index + 1
       }))
-      setRows(loadedRows)
-      setColumns(cols)
+      
+      // Normalize project data
+      const normalized = normalizeProject(loadedRows, cols)
+      setRows(normalized.rows)
+      setColumns(normalized.columns)
+      
       // Save the new project (only if not empty)
-      if (loadedRows.length > 0 || cols.length > 0) {
-        await updateProject(loadedRows, cols)
+      if (normalized.rows.length > 0 || normalized.columns.length > 0) {
+        await updateProject(normalized.rows, normalized.columns)
       }
     }
     const handleOpen = async (e) => {
@@ -53,14 +87,18 @@ function ProjectPage() {
             ...row,
             rowNo: row.rowNo || index + 1
           }))
-          setColumns(cols)
-          setRows(loadedRows)
+          
+          // Normalize project data
+          const normalized = normalizeProject(loadedRows, cols)
+          setColumns(normalized.columns)
+          setRows(normalized.rows)
           // Save the loaded data
-          await updateProject(loadedRows, cols)
+          await updateProject(normalized.rows, normalized.columns)
         } else {
-          // Empty array
-          setRows([])
-          setColumns([])
+          // Empty array - still need required columns
+          const normalized = normalizeProject([], [])
+          setRows(normalized.rows)
+          setColumns(normalized.columns)
         }
       } else {
         const rows = e.detail.rows || []
@@ -69,11 +107,14 @@ function ProjectPage() {
           ...row,
           rowNo: row.rowNo || index + 1
         }))
-        setRows(loadedRows)
-        setColumns(cols)
+        
+        // Normalize project data
+        const normalized = normalizeProject(loadedRows, cols)
+        setRows(normalized.rows)
+        setColumns(normalized.columns)
         // Save the loaded data (only if not empty)
-        if (loadedRows.length > 0 || cols.length > 0) {
-          await updateProject(loadedRows, cols)
+        if (normalized.rows.length > 0 || normalized.columns.length > 0) {
+          await updateProject(normalized.rows, normalized.columns)
         }
       }
     }
@@ -163,12 +204,23 @@ function ProjectPage() {
           return row
         })
         
-        setRows(loadedRows)
-        setColumns(loadedColumns)
+        // Normalize project data (always normalize, even if empty)
+        const normalized = normalizeProject(loadedRows, loadedColumns)
+        setRows(normalized.rows)
+        setColumns(normalized.columns)
+      } else {
+        // If no project data, still ensure required columns exist
+        const normalized = normalizeProject([], [])
+        setRows(normalized.rows)
+        setColumns(normalized.columns)
       }
     } catch (error) {
       console.error('Error loading project:', error)
       setMessage({ type: 'error', text: 'Failed to load project' })
+      // Even on error, ensure required columns exist
+      const normalized = normalizeProject([], [])
+      setRows(normalized.rows)
+      setColumns(normalized.columns)
     }
   }
 
@@ -182,6 +234,15 @@ function ProjectPage() {
     if (!newRows[rowIndex].rowNo) {
       newRows[rowIndex].rowNo = rowIndex + 1
     }
+    
+    // If S or W changed, recompute likelihood for this row
+    if (columnName === 'S' || columnName === 'W') {
+      newRows[rowIndex].likelihood = getLikelihoodFromSW(
+        newRows[rowIndex].S || '',
+        newRows[rowIndex].W || ''
+      )
+    }
+    
     setRows(newRows)
 
     const rowNo = newRows[rowIndex]?.rowNo || rowIndex + 1
@@ -209,6 +270,8 @@ function ProjectPage() {
     columns.forEach(col => {
       newRow[col] = ''
     })
+    // Ensure likelihood is computed (will be empty since S and W are empty)
+    newRow.likelihood = getLikelihoodFromSW(newRow.S || '', newRow.W || '')
     const newRows = [...rows, newRow]
     setRows(newRows)
     updateProject(newRows, columns)
@@ -328,8 +391,15 @@ function ProjectPage() {
       ...row,
       [columnName]: ''
     }))
-    setRows(newRows)
-    updateProject(newRows, newColumns)
+    
+    // Recompute likelihood for all rows after adding column
+    const normalizedRows = newRows.map(row => ({
+      ...row,
+      likelihood: getLikelihoodFromSW(row.S || '', row.W || '')
+    }))
+    
+    setRows(normalizedRows)
+    updateProject(normalizedRows, newColumns)
     setShowColumnModal(false)
     setMessage({ type: 'success', text: `Column "${columnName}" added successfully` })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
@@ -358,6 +428,15 @@ function ProjectPage() {
 
   const handleDeleteColumnConfirm = async () => {
     if (!columnToDelete) return
+    
+    // Prevent deletion of required columns
+    if (REQUIRED_COLUMNS.includes(columnToDelete)) {
+      setMessage({ type: 'error', text: `Column "${columnToDelete}" is a required column and cannot be deleted` })
+      setShowDeleteColumnModal(false)
+      setColumnToDelete(null)
+      setColumnHasData(false)
+      return
+    }
     
     const newColumns = columns.filter(col => col !== columnToDelete)
     setColumns(newColumns)
