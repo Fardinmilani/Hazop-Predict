@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { rankingAPI, projectAPI, libraryAPI } from '../utils/api'
 import { BarChart3, AlertCircle, X, RotateCcw } from 'lucide-react'
+import { RANKING_GROUP_PRESETS } from '../constants/rankingGroupPresets'
 
 function RankingPage() {
   const [projectData, setProjectData] = useState([])
@@ -16,6 +17,8 @@ function RankingPage() {
   const [showAddColumnModal, setShowAddColumnModal] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
   const [newGroup, setNewGroup] = useState('') // New state for group selection
+  const [showAddGroupModal, setShowAddGroupModal] = useState(false)
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState(null)
   
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
@@ -30,6 +33,188 @@ function RankingPage() {
     const digits = key.match(/\d+/)
     if (!digits) return null
     return parseInt(digits[0], 10)
+  }
+
+  // Helper functions for group codes and key handling
+  const extractGroupCode = (groupName) => {
+    if (!groupName) return null
+    const match = groupName.match(/\(([A-Z])\)$/)
+    return match ? match[1] : null
+  }
+
+  const makeCriteriaKey = (groupName, label) => {
+    const code = extractGroupCode(groupName)
+    if (code) {
+      return `${code}::${label}`
+    }
+    return label
+  }
+
+  const displayCriteriaLabel = (key) => {
+    if (!key) return ''
+    if (key.includes('::')) {
+      return key.split('::')[1]
+    }
+    return key
+  }
+
+  // Helper functions for RCA tree structure
+  const extractGroupToken = (groupName) => {
+    if (!groupName) return null
+    // Check for F(t) first
+    if (groupName.includes('F(t)')) return 'F(t)'
+    // Check for single letter tokens: (D), (P), (C), (O), (M)
+    const match = groupName.match(/\(([A-Z])\)$/)
+    return match ? match[1] : null
+  }
+
+  // Organize groups by phase
+  const organizeGroupsByPhase = (groups) => {
+    const development = [] // D, P, C
+    const aging = [] // F(t)
+    const operation = [] // O, M
+    const other = [] // Unknown groups
+
+    groups.forEach(group => {
+      const token = extractGroupToken(group.name)
+      if (token === 'D' || token === 'P' || token === 'C') {
+        development.push(group)
+      } else if (token === 'F(t)') {
+        aging.push(group)
+      } else if (token === 'O' || token === 'M') {
+        operation.push(group)
+      } else {
+        other.push(group)
+      }
+    })
+
+    // Sort development groups: D, P, C
+    development.sort((a, b) => {
+      const order = { 'D': 1, 'P': 2, 'C': 3 }
+      const tokenA = extractGroupToken(a.name)
+      const tokenB = extractGroupToken(b.name)
+      return (order[tokenA] || 999) - (order[tokenB] || 999)
+    })
+
+    // Sort operation groups: O, M
+    operation.sort((a, b) => {
+      const order = { 'O': 1, 'M': 2 }
+      const tokenA = extractGroupToken(a.name)
+      const tokenB = extractGroupToken(b.name)
+      return (order[tokenA] || 999) - (order[tokenB] || 999)
+    })
+
+    return { development, aging, operation, other }
+  }
+
+  // Calculate group score for an alternative
+  const calculateGroupScore = (alternative, groupColumns) => {
+    if (!groupColumns || groupColumns.length === 0) return 0
+    
+    const weights = {}
+    let sumWeights = 0
+    groupColumns.forEach(col => {
+      const weight = criteriaWeights[col] || 0
+      weights[col] = weight
+      sumWeights += Math.abs(weight)
+    })
+
+    if (sumWeights === 0) {
+      // Simple average if no weights
+      let sum = 0
+      let count = 0
+      groupColumns.forEach(col => {
+        const score = alternativesScores[alternative]?.[col]
+        if (score !== '' && score !== null && score !== undefined) {
+          const numScore = parseFloat(score)
+          if (!isNaN(numScore)) {
+            sum += numScore
+            count++
+          }
+        }
+      })
+      return count > 0 ? sum / count : 0
+    }
+
+    // Weighted average
+    let weightedSum = 0
+    groupColumns.forEach(col => {
+      const score = alternativesScores[alternative]?.[col]
+      if (score !== '' && score !== null && score !== undefined) {
+        const numScore = parseFloat(score)
+        if (!isNaN(numScore)) {
+          const normalizedWeight = weights[col] / sumWeights
+          weightedSum += normalizedWeight * numScore
+        }
+      }
+    })
+
+    return weightedSum
+  }
+
+  // Calculate computed values for an alternative
+  const calculateComputedValues = (alternative) => {
+    const { development, aging, operation } = organizeGroupsByPhase(columnGroups)
+
+    // Get group columns
+    const dCols = development.find(g => extractGroupToken(g.name) === 'D')?.columns || []
+    const pCols = development.find(g => extractGroupToken(g.name) === 'P')?.columns || []
+    const cCols = development.find(g => extractGroupToken(g.name) === 'C')?.columns || []
+    const fCols = aging.find(g => extractGroupToken(g.name) === 'F(t)')?.columns || []
+    const oCols = operation.find(g => extractGroupToken(g.name) === 'O')?.columns || []
+    const mCols = operation.find(g => extractGroupToken(g.name) === 'M')?.columns || []
+
+    // Calculate group scores
+    const D = calculateGroupScore(alternative, dCols)
+    const P = calculateGroupScore(alternative, pCols)
+    const C = calculateGroupScore(alternative, cCols)
+    const F_t = calculateGroupScore(alternative, fCols)
+    const O = calculateGroupScore(alternative, oCols)
+    const M = calculateGroupScore(alternative, mCols)
+
+    // Calculate sum of weights for each phase
+    const sumWeights = (cols) => {
+      return cols.reduce((sum, col) => sum + Math.abs(criteriaWeights[col] || 0), 0)
+    }
+
+    const wa = sumWeights([...dCols, ...pCols, ...cCols])
+    const wv = sumWeights([...oCols, ...mCols])
+    const wf = sumWeights(fCols)
+
+    // Calculate a (weighted average of D, P, C)
+    let a = 0
+    if (wa > 0) {
+      const wD = sumWeights(dCols)
+      const wP = sumWeights(pCols)
+      const wC = sumWeights(cCols)
+      a = (wD * D + wP * P + wC * C) / wa
+    } else if (dCols.length + pCols.length + cCols.length > 0) {
+      const values = [D, P, C].filter(v => !isNaN(v))
+      a = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0
+    }
+
+    // Calculate V (weighted average of O, M)
+    let V = 0
+    if (wv > 0) {
+      const wO = sumWeights(oCols)
+      const wM = sumWeights(mCols)
+      V = (wO * O + wM * M) / wv
+    } else if (oCols.length + mCols.length > 0) {
+      const values = [O, M].filter(v => !isNaN(v))
+      V = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0
+    }
+
+    // Calculate a·V·F(t)
+    let aVF_t = 0
+    const totalWeight = wa + wv + wf
+    if (totalWeight > 0) {
+      aVF_t = (wa * a + wv * V + wf * F_t) / totalWeight
+    } else if (wa + wv + wf === 0 && (a !== 0 || V !== 0 || F_t !== 0)) {
+      const values = [a, V, F_t].filter(v => !isNaN(v) && v !== 0)
+      aVF_t = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0
+    }
+
+    return { D, P, C, a, 'F(t)': F_t, O, M, V, 'a·V·F(t)': aVF_t }
   }
 
   const buildScoresFromRows = (rows, baseScores) => {
@@ -522,12 +707,15 @@ function RankingPage() {
     const trimmedColumnName = newColumnName.trim()
     const trimmedGroup = newGroup.trim()
     
-    if (rankingColumns.includes(trimmedColumnName)) {
+    // Use makeCriteriaKey if group is provided
+    const columnKey = trimmedGroup ? makeCriteriaKey(trimmedGroup, trimmedColumnName) : trimmedColumnName
+    
+    if (rankingColumns.includes(columnKey)) {
       setMessage({ type: 'error', text: 'Column already exists' })
       return
     }
     
-    const newColumns = [...rankingColumns, trimmedColumnName]
+    const newColumns = [...rankingColumns, columnKey]
     setRankingColumns(newColumns)
     
     // Update groups
@@ -537,12 +725,12 @@ function RankingPage() {
       if (existingGroupIndex >= 0) {
         newGroups[existingGroupIndex] = {
           ...newGroups[existingGroupIndex],
-          columns: [...newGroups[existingGroupIndex].columns, trimmedColumnName]
+          columns: [...newGroups[existingGroupIndex].columns, columnKey]
         }
       } else {
         newGroups.push({
           name: trimmedGroup,
-          columns: [trimmedColumnName]
+          columns: [columnKey]
         })
       }
     }
@@ -554,11 +742,11 @@ function RankingPage() {
     
     // Clear weights and scores for this new column
     const newWeights = { ...criteriaWeights }
-    newWeights[trimmedColumnName] = 0
+    newWeights[columnKey] = 0
     
     const newScores = { ...alternativesScores }
     Object.keys(newScores).forEach(alt => {
-      newScores[alt] = { ...newScores[alt], [trimmedColumnName]: '' }
+      newScores[alt] = { ...newScores[alt], [columnKey]: '' }
     })
     
     setCriteriaWeights(newWeights)
@@ -570,8 +758,89 @@ function RankingPage() {
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
 
+  const handleAddGroupPreset = (preset) => {
+    if (!preset) {
+      setMessage({ type: 'error', text: 'Please select a preset group' })
+      return
+    }
+
+    const groupName = preset.name
+    const criteriaKeys = preset.columns.map(label => makeCriteriaKey(groupName, label))
+    
+    // Filter out keys that already exist
+    const newKeys = criteriaKeys.filter(key => !rankingColumns.includes(key))
+    
+    if (newKeys.length === 0) {
+      setMessage({ type: 'info', text: `All columns from "${groupName}" already exist` })
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+      return
+    }
+    
+    // Add new keys to rankingColumns (append to preserve order)
+    const newRankingColumns = [...rankingColumns, ...newKeys]
+    setRankingColumns(newRankingColumns)
+    
+    // Update groups
+    let newColumnGroups = [...columnGroups]
+    const existingGroupIndex = newColumnGroups.findIndex(g => g.name === groupName)
+    
+    if (existingGroupIndex >= 0) {
+      // Merge columns without duplicates
+      const existingColumns = new Set(newColumnGroups[existingGroupIndex].columns)
+      criteriaKeys.forEach(key => existingColumns.add(key))
+      newColumnGroups[existingGroupIndex] = {
+        ...newColumnGroups[existingGroupIndex],
+        columns: Array.from(existingColumns)
+      }
+    } else {
+      // Create new group
+      newColumnGroups.push({
+        name: groupName,
+        columns: criteriaKeys
+      })
+    }
+    setColumnGroups(newColumnGroups)
+    
+    // Update weights - only add for new keys, don't overwrite existing
+    const newWeights = { ...criteriaWeights }
+    newKeys.forEach(key => {
+      if (!(key in newWeights)) {
+        newWeights[key] = 0
+      }
+    })
+    setCriteriaWeights(newWeights)
+    
+    // Update scores - add empty values for new keys
+    const newScores = { ...alternativesScores }
+    Object.keys(newScores).forEach(alt => {
+      newKeys.forEach(key => {
+        if (!(key in newScores[alt])) {
+          newScores[alt] = { ...newScores[alt], [key]: '' }
+        }
+      })
+    })
+    setAlternativesScores(newScores)
+    
+    // Close modal and reset selection
+    setShowAddGroupModal(false)
+    setSelectedPresetIndex(null)
+    
+    // Save to backend
+    updateRanking(newWeights, newScores, rankingResult, newRankingColumns, newColumnGroups)
+    
+    const addedCount = newKeys.length
+    const skippedCount = criteriaKeys.length - newKeys.length
+    let messageText = `${addedCount} column(s) from "${groupName}" added successfully`
+    if (skippedCount > 0) {
+      messageText += ` (${skippedCount} already existed)`
+    }
+    setMessage({ type: 'success', text: messageText })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+
   const handleDeleteColumn = (columnToDelete) => {
-    if (!window.confirm(`Are you sure you want to delete column "${columnToDelete}"? All data in this column will be lost.`)) {
+    const displayName = displayCriteriaLabel(columnToDelete)
+    if (!window.confirm(`Are you sure you want to delete column "${displayName}"? All data in this column will be lost.`)) {
       return
     }
     
@@ -601,7 +870,50 @@ function RankingPage() {
     
     // Save to backend
     updateRanking(newWeights, newScores, rankingResult, newColumns, newGroups)
-    setMessage({ type: 'success', text: `Column "${columnToDelete}" deleted successfully` })
+    setMessage({ type: 'success', text: `Column "${displayName}" deleted successfully` })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+
+  const handleDeleteGroup = (groupToDelete) => {
+    const group = columnGroups.find(g => g.name === groupToDelete)
+    if (!group) return
+
+    const columnsToDelete = group.columns
+    const columnsCount = columnsToDelete.length
+    
+    if (!window.confirm(`Are you sure you want to delete group "${groupToDelete}"? All ${columnsCount} column(s) in this group and their data will be lost.`)) {
+      return
+    }
+    
+    // Remove all columns of this group from rankingColumns
+    const newColumns = rankingColumns.filter(col => !columnsToDelete.includes(col))
+    setRankingColumns(newColumns)
+    
+    // Remove the group from columnGroups
+    const newGroups = columnGroups.filter(g => g.name !== groupToDelete)
+    setColumnGroups(newGroups)
+    
+    // Remove all columns from weights
+    const newWeights = { ...criteriaWeights }
+    columnsToDelete.forEach(col => {
+      delete newWeights[col]
+    })
+    setCriteriaWeights(newWeights)
+    
+    // Remove all columns from scores
+    const newScores = { ...alternativesScores }
+    Object.keys(newScores).forEach(alt => {
+      const altScores = { ...newScores[alt] }
+      columnsToDelete.forEach(col => {
+        delete altScores[col]
+      })
+      newScores[alt] = altScores
+    })
+    setAlternativesScores(newScores)
+    
+    // Save to backend
+    updateRanking(newWeights, newScores, rankingResult, newColumns, newGroups)
+    setMessage({ type: 'success', text: `Group "${groupToDelete}" and ${columnsCount} column(s) deleted successfully` })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
 
@@ -664,7 +976,11 @@ function RankingPage() {
 
         {message.text && (
           <div className={`mb-4 p-3 rounded ${
-            message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            message.type === 'success' 
+              ? 'bg-green-100 text-green-700' 
+              : message.type === 'info'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-red-100 text-red-700'
           }`}>
             {message.text}
           </div>
@@ -673,12 +989,20 @@ function RankingPage() {
         {/* Column Management */}
         <div className="mb-6 flex items-center justify-between">
           <h3 className="text-lg font-semibold">Ranking Columns</h3>
-          <button
-            onClick={() => setShowAddColumnModal(true)}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Add Column
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setShowAddGroupModal(true)}
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            >
+              Add Group
+            </button>
+            <button
+              onClick={() => setShowAddColumnModal(true)}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Add Column
+            </button>
+          </div>
         </div>
 
         {/* Criteria Weights */}
@@ -690,13 +1014,22 @@ function RankingPage() {
             // Grouped weights display
             columnGroups.map((group) => (
               <div key={group.name} className="mb-6">
-                <h4 className="text-md font-semibold mb-3 text-blue-600">{group.name}</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-md font-semibold text-blue-600">{group.name}</h4>
+                  <button
+                    onClick={() => handleDeleteGroup(group.name)}
+                    className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                    title="Delete group"
+                  >
+                    Delete Group
+                  </button>
+                </div>
                 <div className="grid grid-cols-3 gap-4">
                   {group.columns.map((col) => (
                     <div key={col} className="relative">
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-medium text-gray-700">
-                          {col}
+                          {displayCriteriaLabel(col)}
                         </label>
                         <button
                           onClick={() => handleDeleteColumn(col)}
@@ -726,7 +1059,7 @@ function RankingPage() {
                 <div key={col} className="relative">
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      {col}
+                      {displayCriteriaLabel(col)}
                     </label>
                     <button
                       onClick={() => handleDeleteColumn(col)}
@@ -754,103 +1087,268 @@ function RankingPage() {
         <div className="mb-6">
           <h3 className="text-lg font-semibold mb-4">Alternatives Scores</h3>
           <div className="overflow-x-auto">
-            <table className="w-full bg-white border border-gray-300" style={{ tableLayout: 'auto' }}>
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[80px]" rowSpan="2">Row No</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]" rowSpan="2">Alternative</th>
-                  {columnGroups.length > 0 ? (
-                    // Grouped header with borders and centered group names
-                    columnGroups.map((group, groupIndex) => (
+            {(() => {
+              const { development, aging, operation, other } = organizeGroupsByPhase(columnGroups)
+              
+              // Calculate column spans
+              const devCols = development.reduce((sum, g) => sum + g.columns.length, 0)
+              const agingCols = aging.reduce((sum, g) => sum + g.columns.length, 0)
+              const opCols = operation.reduce((sum, g) => sum + g.columns.length, 0)
+              const otherCols = other.reduce((sum, g) => sum + g.columns.length, 0)
+              const totalLeafCols = devCols + agingCols + opCols + otherCols
+              
+              // Determine which computed columns to show
+              const hasD = development.some(g => extractGroupToken(g.name) === 'D')
+              const hasP = development.some(g => extractGroupToken(g.name) === 'P')
+              const hasC = development.some(g => extractGroupToken(g.name) === 'C')
+              const hasF = aging.length > 0
+              const hasO = operation.some(g => extractGroupToken(g.name) === 'O')
+              const hasM = operation.some(g => extractGroupToken(g.name) === 'M')
+              
+              const computedCols = []
+              if (hasD) computedCols.push('D')
+              if (hasP) computedCols.push('P')
+              if (hasC) computedCols.push('C')
+              const hasDevelopment = hasD || hasP || hasC
+              if (hasDevelopment) computedCols.push('a')
+              if (hasF) computedCols.push('F(t)')
+              if (hasO) computedCols.push('O')
+              if (hasM) computedCols.push('M')
+              const hasOperation = hasO || hasM
+              if (hasOperation) computedCols.push('V')
+              // Always add a·V·F(t) if we can calculate it (have at least a, V, and F(t))
+              // The calculation function will handle cases where some values are 0
+              if (hasDevelopment && hasOperation && hasF) {
+                computedCols.push('a·V·F(t)')
+              } else if (hasDevelopment && hasOperation) {
+                // If we have a and V but no F(t), still show the column (will be calculated as weighted average of a and V)
+                computedCols.push('a·V·F(t)')
+              } else if (hasDevelopment && hasF) {
+                // If we have a and F(t) but no V, still show the column (will be calculated as weighted average of a and F(t))
+                computedCols.push('a·V·F(t)')
+              } else if (hasOperation && hasF) {
+                // If we have V and F(t) but no a, still show the column (will be calculated as weighted average of V and F(t))
+                computedCols.push('a·V·F(t)')
+              }
+              
+              const computedColsCount = computedCols.length
+              const totalCols = 2 + totalLeafCols + computedColsCount
+              
+              // Build ordered groups list
+              const orderedGroups = [...development, ...aging, ...operation, ...other]
+              
+              return (
+                <table className="w-full bg-white border border-gray-300" style={{ tableLayout: 'auto' }}>
+                  <thead>
+                    {/* Row 1: Main Title */}
+                    <tr className="bg-gray-50">
                       <th 
-                        key={group.name} 
-                        className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
-                          groupIndex < columnGroups.length - 1 ? 'border-r border-gray-300' : ''
-                        }`}
-                        colSpan={group.columns.length}
+                        colSpan={totalCols} 
+                        className="px-4 py-3 text-center text-sm font-bold text-gray-800 border-b border-gray-300"
                       >
-                        {group.name}
+                        RCA Table and Risk Occurrence Probability Calculation Using Fault Tree and Analytic Hierarchy Decision-Making Method
                       </th>
-                    ))
-                  ) : (
-                    // If no groups, span across all columns
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase" colSpan={rankingColumns.length}>
-                      Criteria
-                    </th>
-                  )}
-                </tr>
-                {columnGroups.length > 0 && (
-                  <tr className="bg-gray-100">
-                    {columnGroups.map((group, groupIndex) => 
-                      group.columns.map((col, colIndex) => (
+                    </tr>
+                    
+                    {/* Row 2: Subtitle */}
+                    <tr className="bg-gray-50">
+                      <th 
+                        colSpan={totalCols} 
+                        className="px-4 py-3 text-center text-xs font-semibold text-gray-700 border-b border-gray-300"
+                      >
+                        Weights of Factors Leading to the Occurrence of the Main Cause of Deviation (Cause resulting from equipment malfunction)
+                        <br />
+                        (Main Cause: Cause) {'{a·V·F(t)}'}
+                      </th>
+                    </tr>
+                    
+                    {/* Row 3: Phase Headers */}
+                    <tr className="bg-gray-100">
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[80px]" 
+                        rowSpan={3}
+                      >
+                        Row No
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]" 
+                        rowSpan={3}
+                      >
+                        Alternative
+                      </th>
+                      {devCols > 0 && (
                         <th 
-                          key={col} 
-                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
-                            colIndex === group.columns.length - 1 && groupIndex < columnGroups.length - 1 
-                              ? 'border-r border-gray-300' 
-                              : ''
-                          }`}
+                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
+                          colSpan={devCols}
                         >
-                          {col}
+                          Factors Related to Equipment Development Phase (Parameters: a)
                         </th>
-                      ))
-                    )}
-                  </tr>
-                )}
-              </thead>
-              <tbody>
-                {Object.keys(alternativesScores).sort((a, b) => {
-                  // Sort by row number
-                  const rowNoA = extractRowNoFromKey(a) || 0
-                  const rowNoB = extractRowNoFromKey(b) || 0
-                  return rowNoA - rowNoB
-                }).map((alt) => {
-                  const rowNo = extractRowNoFromKey(alt) || ''
-                  return (
-                    <tr key={alt}>
-                      <td className="px-3 py-3 border-b border-r font-medium text-gray-600 w-[80px]">{rowNo}</td>
-                      <td className="px-3 py-3 border-b border-r font-medium w-[150px] text-sm">{alt}</td>
-                      {columnGroups.length > 0 ? (
-                        // Use grouped columns with borders
-                        columnGroups.map((group, groupIndex) => 
-                          group.columns.map((col, colIndex) => (
-                            <td 
-                              key={col} 
-                              className={`px-3 py-3 border-b w-[120px] ${
-                                colIndex === group.columns.length - 1 && groupIndex < columnGroups.length - 1 
-                                  ? 'border-r border-gray-300' 
-                                  : ''
-                              }`}
-                            >
-                              <input
-                                type="number"
-                                step="0.1"
-                                value={alternativesScores[alt][col] || ''}
-                                onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                                className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            </td>
-                          ))
-                        )
-                      ) : (
-                        // Fallback to all columns if no groups
-                        rankingColumns.map((col) => (
-                          <td key={col} className="px-3 py-3 border-b w-[120px]">
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={alternativesScores[alt][col] || ''}
-                              onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
-                        ))
+                      )}
+                      {agingCols > 0 && (
+                        <th 
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${opCols > 0 || computedColsCount > 0 ? 'border-r border-gray-300' : ''}`}
+                          colSpan={agingCols}
+                        >
+                          Equipment Aging and Lifetime F(t)
+                        </th>
+                      )}
+                      {opCols > 0 && (
+                        <th 
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${computedColsCount > 0 ? 'border-r border-gray-300' : ''}`}
+                          colSpan={opCols}
+                        >
+                          Factors Related to Equipment Operation Phase (Variables: V)
+                        </th>
+                      )}
+                      {otherCols > 0 && (
+                        <th 
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${computedColsCount > 0 ? 'border-r border-gray-300' : ''}`}
+                          colSpan={otherCols}
+                        >
+                          Other
+                        </th>
+                      )}
+                      {computedColsCount > 0 && (
+                        <th 
+                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
+                          colSpan={computedColsCount}
+                        >
+                          Computed Results
+                        </th>
                       )}
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                    
+                    {/* Row 4: Group Headers */}
+                    <tr className="bg-gray-100">
+                      {orderedGroups.map((group, groupIndex) => {
+                        const isLastInPhase = 
+                          (groupIndex === development.length - 1 && development.length > 0) ||
+                          (groupIndex === development.length + aging.length - 1 && aging.length > 0) ||
+                          (groupIndex === development.length + aging.length + operation.length - 1 && operation.length > 0) ||
+                          (groupIndex === orderedGroups.length - 1)
+                        const hasRightBorder = !isLastInPhase || computedColsCount > 0
+                        return (
+                          <th 
+                            key={group.name}
+                            className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                              hasRightBorder ? 'border-r border-gray-300' : ''
+                            }`}
+                            colSpan={group.columns.length}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <span>{group.name}</span>
+                              <button
+                                onClick={() => handleDeleteGroup(group.name)}
+                                className="text-red-500 hover:text-red-700 text-xs font-normal px-1 py-0.5 rounded hover:bg-red-50 transition-colors"
+                                title="Delete group"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          </th>
+                        )
+                      })}
+                      {computedColsCount > 0 && (
+                        <th 
+                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
+                          colSpan={computedColsCount}
+                        >
+                          {/* Can add sub-levels here if needed */}
+                        </th>
+                      )}
+                    </tr>
+                    
+                    {/* Row 5: Leaf Criteria and Computed Column Headers */}
+                    <tr className="bg-gray-100">
+                      {orderedGroups.map((group, groupIndex) => 
+                        group.columns.map((col, colIndex) => {
+                          const isLastInGroup = colIndex === group.columns.length - 1
+                          const isLastGroup = groupIndex === orderedGroups.length - 1
+                          const hasRightBorder = !isLastInGroup || (!isLastGroup && computedColsCount === 0)
+                          return (
+                            <th 
+                              key={`${group.name}__${col}`}
+                              className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
+                                hasRightBorder ? 'border-r border-gray-300' : ''
+                              }`}
+                            >
+                              {displayCriteriaLabel(col)}
+                            </th>
+                          )
+                        })
+                      )}
+                      {computedCols.map((colName, idx) => (
+                        <th 
+                          key={`computed_${colName}`}
+                          className={`px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase bg-gray-50 w-[100px] ${
+                            idx < computedCols.length - 1 ? 'border-r border-gray-300' : ''
+                          }`}
+                        >
+                          {colName}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.keys(alternativesScores).sort((a, b) => {
+                      const rowNoA = extractRowNoFromKey(a) || 0
+                      const rowNoB = extractRowNoFromKey(b) || 0
+                      return rowNoA - rowNoB
+                    }).map((alt) => {
+                      const rowNo = extractRowNoFromKey(alt) || ''
+                      const computedValues = calculateComputedValues(alt)
+                      
+                      return (
+                        <tr key={alt}>
+                          <td className="px-3 py-3 border-b border-r font-medium text-gray-600 w-[80px]">{rowNo}</td>
+                          <td className="px-3 py-3 border-b border-r font-medium w-[150px] text-sm">{alt}</td>
+                          
+                          {/* Leaf input columns */}
+                          {orderedGroups.map((group, groupIndex) => 
+                            group.columns.map((col, colIndex) => {
+                              const isLastInGroup = colIndex === group.columns.length - 1
+                              const isLastGroup = groupIndex === orderedGroups.length - 1
+                              const hasRightBorder = !isLastInGroup || (!isLastGroup && computedColsCount === 0)
+                              return (
+                                <td 
+                                  key={`${group.name}__${col}`}
+                                  className={`px-3 py-3 border-b w-[120px] ${
+                                    hasRightBorder ? 'border-r border-gray-300' : ''
+                                  }`}
+                                >
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={alternativesScores[alt][col] || ''}
+                                    onChange={(e) => handleScoreChange(alt, col, e.target.value)}
+                                    className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                </td>
+                              )
+                            })
+                          )}
+                          
+                          {/* Computed columns */}
+                          {computedCols.map((colName, idx) => (
+                            <td 
+                              key={`computed_${colName}_${alt}`}
+                              className={`px-3 py-3 border-b bg-gray-50 font-semibold text-center w-[100px] ${
+                                idx < computedCols.length - 1 ? 'border-r border-gray-300' : ''
+                              }`}
+                            >
+                              {computedValues[colName] !== undefined 
+                                ? computedValues[colName].toFixed(3)
+                                : '-'
+                              }
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )
+            })()}
           </div>
         </div>
 
@@ -984,6 +1482,80 @@ function RankingPage() {
                   setShowAddColumnModal(false)
                   setNewColumnName('')
                   setNewGroup('')
+                }}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Group Modal */}
+      {showAddGroupModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Add Preset Group</h3>
+              <button
+                onClick={() => {
+                  setShowAddGroupModal(false)
+                  setSelectedPresetIndex(null)
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">Select a preset group to add with all its columns:</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Preset Group</label>
+                <select
+                  value={selectedPresetIndex !== null ? selectedPresetIndex : ''}
+                  onChange={(e) => setSelectedPresetIndex(e.target.value !== '' ? parseInt(e.target.value) : null)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Select a preset group --</option>
+                  {RANKING_GROUP_PRESETS.map((preset, index) => (
+                    <option key={index} value={index}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedPresetIndex !== null && RANKING_GROUP_PRESETS[selectedPresetIndex] && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Columns Preview</label>
+                  <div className="bg-gray-50 border border-gray-200 rounded p-3 max-h-40 overflow-y-auto">
+                    <ul className="list-disc list-inside space-y-1">
+                      {RANKING_GROUP_PRESETS[selectedPresetIndex].columns.map((col, idx) => (
+                        <li key={idx} className="text-sm text-gray-700">{col}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  if (selectedPresetIndex !== null) {
+                    handleAddGroupPreset(RANKING_GROUP_PRESETS[selectedPresetIndex])
+                  } else {
+                    setMessage({ type: 'error', text: 'Please select a preset group' })
+                    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddGroupModal(false)
+                  setSelectedPresetIndex(null)
                 }}
                 className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
               >

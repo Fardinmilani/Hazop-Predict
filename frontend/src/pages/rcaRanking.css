@@ -1,0 +1,581 @@
+/* RCA Ranking Layout Styles */
+
+/* Unified Table Container */
+.rcaUnifiedContainer {
+  border: 3px solid #000;
+  overflow-x: auto;
+  overflow-y: visible;
+  margin-bottom: 24px;
+}
+
+.rcaUnifiedTable {
+  border-collapse: collapse;
+  width: max-content;
+  table-layout: fixed;
+  background: #fff;
+}
+
+.rcaUnifiedTable th,
+.rcaUnifiedTable td {
+  border: 2px solid #000;
+  padding: 0;
+  margin: 0;
+  vertical-align: top;
+}
+
+/* Header bars */
+.rcaHeaderBar {
+  background-color: #4B5563;
+  color: white;
+  padding: 16px 20px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.rcaSubtitleBar {
+  background-color: #6B7280;
+  color: white;
+  padding: 12px 20px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.rcaDescriptionBar {
+  background-color: #E5E7EB;
+  padding: 10px 20px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rcaDescriptionBar .persian {
+  direction: rtl;
+  text-align: right;
+  margin-top: 8px;
+}
+
+/* Vertical text utility */
+.rca-vert {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Cell with relative positioning */
+.rca-cell {
+  position: relative;
+  height: 190px;
+  vertical-align: top;
+  padding: 8px;
+}
+
+/* Weight input anchored bottom */
+.rca-weight-input {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  padding: 4px 6px;
+  border: 1px solid #666;
+  border-radius: 2px;
+  font-size: 12px;
+  text-align: center;
+  background: #fff;
+}
+
+.rca-weight-input:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+/* Delete button anchored top-right */
+.rca-delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.rca-delete-btn:hover {
+  background: #dc2626;
+}
+
+/* Phase headers */
+.rca-phase-header {
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+  padding: 12px 8px;
+  border-bottom: 2px solid #000;
+}
+
+.rca-phase-header.bilingual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rca-phase-header .persian {
+  direction: rtl;
+  font-size: 12px;
+}
+
+.rca-phase-dev {
+  background-color: #CFE8C9;
+}
+
+.rca-phase-aging {
+  background-color: #F6E08A;
+}
+
+.rca-phase-op {
+  background-color: #CFE3F6;
+}
+
+.rca-phase-formula {
+  background-color: #D1D5DB;
+}
+
+/* Sub-group headers */
+.rca-subgroup-header {
+  font-weight: 600;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px 4px;
+  border-bottom: 2px solid #000;
+}
+
+.rca-subgroup-dev {
+  background-color: #E8F5E3;
+}
+
+.rca-subgroup-op {
+  background-color: #E3F2FD;
+}
+
+/* Leaf factor cell */
+.rca-leaf-cell {
+  background-color: #F9FAFB;
+  position: relative;
+  height: 190px;
+  vertical-align: top;
+  padding: 8px 4px;
+}
+
+.rca-leaf-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-weight: 600;
+  font-size: 11px;
+  text-align: center;
+  padding: 8px 0;
+  margin-bottom: 40px;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+/* Sticky columns */
+.rca-sticky-left {
+  position: sticky;
+  left: 0;
+  background: #f9fafb;
+  z-index: 10;
+}
+
+.rca-sticky-left-header {
+  position: sticky;
+  left: 0;
+  background: #f3f4f6;
+  z-index: 20;
+}
+
+/* Score input */
+.rca-score-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #666;
+  border-radius: 2px;
+  font-size: 12px;
+  text-align: center;
+  background: #fff;
+}
+
+.rca-score-input:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+/* Optimization columns */
+.rca-opt-column {
+  background-color: #D1D5DB;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 11px;
+  text-align: center;
+  padding: 8px 4px;
+}
+
+.rca-opt-column.blue {
+  background-color: #CFE3F6;
+}
+
+.rca-opt-block {
+  background-color: #CFE3F6;
+  padding: 8px;
+  font-weight: 700;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Common block styles */
+.rcaBlock {
+  border: 2px solid #000;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.rcaBlockHeader {
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+  padding: 8px 4px;
+  border-bottom: 2px solid #000;
+  margin-bottom: 4px;
+}
+
+.rcaBlockHeader.bilingual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rcaBlockHeader .persian {
+  direction: rtl;
+  font-size: 12px;
+}
+
+/* Development Phase - Green */
+.rcaDevPhase {
+  background-color: #CFE8C9;
+  flex: 1;
+  min-width: 400px;
+}
+
+.rcaDevSubBlock {
+  background-color: #E8F5E3;
+  border: 1px solid #000;
+  margin: 4px;
+  padding: 6px;
+}
+
+.rcaDevSubBlockHeader {
+  font-weight: 600;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px;
+  border-bottom: 1px solid #000;
+  margin-bottom: 4px;
+}
+
+/* Equipment Aging - Yellow */
+.rcaAgingColumn {
+  background-color: #F6E08A;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 8px 4px;
+  border-left: 2px solid #000;
+  border-right: 2px solid #000;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+/* Operation Phase - Blue */
+.rcaOpPhase {
+  background-color: #CFE3F6;
+  flex: 1;
+  min-width: 300px;
+}
+
+.rcaOpSubBlock {
+  background-color: #E3F2FD;
+  border: 1px solid #000;
+  margin: 4px;
+  padding: 6px;
+}
+
+.rcaOpSubBlockHeader {
+  font-weight: 600;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px;
+  border-bottom: 1px solid #000;
+  margin-bottom: 4px;
+}
+
+/* Vertical label column */
+.rcaVerticalLabel {
+  background-color: #D1D5DB;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 8px 4px;
+  border-left: 2px solid #000;
+  border-right: 2px solid #000;
+  min-width: 50px;
+  flex-shrink: 0;
+}
+
+/* Leaf factor columns */
+.rcaLeafColumn {
+  background-color: #F9FAFB;
+  border: 2px solid #000;
+  padding: 6px;
+  min-width: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.rcaLeafColumnHeader {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-weight: 600;
+  font-size: 11px;
+  text-align: center;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rcaLeafColumnDelete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.rcaLeafColumnDelete:hover {
+  background: #dc2626;
+}
+
+.rcaLeafColumnInput {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid #666;
+  border-radius: 2px;
+  font-size: 13px;
+  text-align: center;
+  background: #fff;
+  margin-top: auto;
+}
+
+.rcaLeafColumnInput:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+/* Optimization columns */
+.rcaOptColumn {
+  background-color: #D1D5DB;
+  border: 2px solid #000;
+  padding: 6px;
+  min-width: 100px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 11px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.rcaOptColumn.blue {
+  background-color: #CFE3F6;
+}
+
+.rcaOptBlock {
+  background-color: #CFE3F6;
+  border: 2px solid #000;
+  padding: 8px;
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.rcaOptBlockHeader {
+  font-weight: 700;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px 4px;
+  border-bottom: 2px solid #000;
+  margin-bottom: 4px;
+}
+
+/* Thick dividers */
+.rcaThickDividerRight {
+  border-right: 4px solid #000 !important;
+}
+
+/* Group header blocks */
+.rcaHeaderGroup {
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 8px;
+  border-bottom: 3px solid #000;
+  height: 42px;
+}
+
+.rcaHeaderGroup.group-0 {
+  background-color: #CFE8C9; /* light green */
+}
+
+.rcaHeaderGroup.group-1 {
+  background-color: #CFE3F6; /* light blue */
+}
+
+.rcaHeaderGroup.group-default {
+  background-color: #E5E7EB; /* light gray */
+}
+
+/* Alternatives Scores Table */
+.rcaScoresTable {
+  border-collapse: collapse;
+  border: 3px solid #000;
+  background: #fff;
+  table-layout: fixed;
+  width: max-content;
+  margin-top: 24px;
+}
+
+.rcaScoresTable th,
+.rcaScoresTable td {
+  border: 2px solid #000;
+  padding: 8px;
+}
+
+.rcaScoresTable thead th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+.rcaScoresTable .rcaVerticalHeader {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  text-align: center;
+  height: 120px;
+  width: 100px;
+  padding: 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-bottom: 3px solid #000;
+  vertical-align: middle;
+}
+
+.rcaScoresTable .rcaStickyLeft {
+  position: sticky;
+  left: 0;
+  background: #f9fafb;
+  z-index: 10;
+}
+
+.rcaScoresTable .rcaStickyLeftHeader {
+  position: sticky;
+  left: 0;
+  background: #f3f4f6;
+  z-index: 20;
+}
+
+.rcaScoresTable .rcaInput {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #666;
+  border-radius: 2px;
+  font-size: 12px;
+  text-align: center;
+  background: #fff;
+}
+
+.rcaScoresTable .rcaInput:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+/* Ensure table elements use default display */
+.rcaScoresTable,
+.rcaScoresTable thead,
+.rcaScoresTable tbody,
+.rcaScoresTable tr {
+  display: table;
+}
+
+.rcaScoresTable th,
+.rcaScoresTable td {
+  display: table-cell;
+}
+
+/* Scroll container */
+.rcaScrollContainer {
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 3px solid #000;
+  margin-bottom: 24px;
+}

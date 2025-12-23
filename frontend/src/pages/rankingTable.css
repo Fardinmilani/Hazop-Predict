@@ -1,0 +1,272 @@
+/* RCA-style table styling */
+
+.rcaTable {
+  border-collapse: collapse;
+  border: 3px solid #000;
+  background: #fff;
+  table-layout: fixed;
+  width: max-content;
+}
+
+.rcaTable th,
+.rcaTable td {
+  border: 2px solid #000;
+  padding: 8px;
+}
+
+.rcaTable thead th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+/* Group header blocks (Row 1) */
+.rcaHeaderGroup {
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 8px;
+  border-bottom: 3px solid #000;
+  height: 42px;
+}
+
+.rcaHeaderGroup.group-0 {
+  background-color: #CFE8C9; /* light green */
+}
+
+.rcaHeaderGroup.group-1 {
+  background-color: #CFE3F6; /* light blue */
+}
+
+.rcaHeaderGroup.group-default {
+  background-color: #E5E7EB; /* light gray */
+}
+
+/* Vertical column headers (Row 2) */
+.rcaHeaderColVertical {
+  text-align: center;
+  height: 180px;
+  width: 140px;
+  padding: 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-bottom: 3px solid #000;
+  vertical-align: middle;
+}
+
+.rcaVerticalText {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: inline-block;
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Thick vertical dividers between groups */
+.rcaThickDividerRight {
+  border-right: 4px solid #000 !important;
+}
+
+.rcaThickDividerLeft {
+  border-left: 4px solid #000 !important;
+}
+
+/* Sticky left columns */
+.rcaStickyLeft {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 10;
+}
+
+.rcaStickyLeftHeader {
+  position: sticky;
+  left: 0;
+  background: #f3f4f6;
+  z-index: 20;
+}
+
+/* Compact input styling */
+.rcaInput {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #666;
+  border-radius: 2px;
+  font-size: 12px;
+  text-align: center;
+  background: #fff;
+}
+
+.rcaInput:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+/* Weights strip table */
+.rcaWeightsTable {
+  border-collapse: collapse;
+  border: 3px solid #000;
+  background: #fff;
+  table-layout: fixed;
+  width: max-content;
+  margin-bottom: 24px;
+}
+
+.rcaWeightsTable th,
+.rcaWeightsTable td {
+  border: 2px solid #000;
+  padding: 8px;
+}
+
+.rcaWeightsTable thead th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+/* Weight input cell */
+.rcaWeightCell {
+  padding: 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.rcaWeightInput {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid #666;
+  border-radius: 2px;
+  font-size: 13px;
+  text-align: center;
+  background: #fff;
+}
+
+.rcaWeightInput:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+/* Delete button in weight header */
+.rcaDeleteButton {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  z-index: 30;
+}
+
+.rcaDeleteButton:hover {
+  background: #dc2626;
+}
+
+.rcaWeightHeaderCell {
+  position: relative;
+  vertical-align: middle;
+  height: 180px;
+  width: 140px;
+  padding: 8px 4px;
+}
+
+.rcaWeightHeaderCell > div {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.rcaWeightHeaderCell .rcaVerticalText {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  display: inline-block;
+  margin: 0;
+  padding: 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(180deg);
+}
+
+.rcaWeightHeaderCell .rcaWeightInputWrapper {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+}
+
+/* Alternatives table body cells */
+.rcaTableCell {
+  padding: 6px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.rcaTableCell input {
+  width: 100%;
+  min-width: 60px;
+}
+
+/* Row number and alternative columns */
+.rcaRowNoCell {
+  font-weight: 600;
+  text-align: center;
+  background: #f9fafb;
+  width: 90px;
+}
+
+.rcaAlternativeCell {
+  font-weight: 500;
+  text-align: left;
+  padding-left: 12px;
+  background: #f9fafb;
+  width: 220px;
+}
+
+/* Scrollable container */
+.rcaScrollContainer {
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 3px solid #000;
+  margin-bottom: 24px;
+}
+
+/* Ensure sticky columns work in scroll container */
+.rcaScrollContainer .rcaStickyLeft,
+.rcaScrollContainer .rcaStickyLeftHeader {
+  position: sticky;
+}
+
+/* Ensure table elements use default display */
+.rcaTable,
+.rcaTable thead,
+.rcaTable tbody,
+.rcaTable tr,
+.rcaWeightsTable,
+.rcaWeightsTable thead,
+.rcaWeightsTable tbody,
+.rcaWeightsTable tr {
+  display: table;
+}
+
+.rcaTable th,
+.rcaTable td,
+.rcaWeightsTable th,
+.rcaWeightsTable td {
+  display: table-cell;
+}
