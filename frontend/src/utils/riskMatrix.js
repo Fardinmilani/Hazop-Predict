@@ -46,3 +46,4 @@ export function getLikelihoodFromSW(s, w) {
   // If no match found, return empty string
   return ''
 }
+
