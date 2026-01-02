@@ -1558,7 +1558,7 @@ function RankingPage() {
                                        step="0.1"
                                        value={alternativesScores[alt][col] || ''}
                                        onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                                       className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                      />
                                    </td>
                                  )
