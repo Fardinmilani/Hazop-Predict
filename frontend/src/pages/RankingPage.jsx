@@ -19,6 +19,8 @@ function RankingPage() {
   const [newGroup, setNewGroup] = useState('') // New state for group selection
   const [showAddGroupModal, setShowAddGroupModal] = useState(false)
   const [selectedPresetIndex, setSelectedPresetIndex] = useState(null)
+  const [showComputedResults, setShowComputedResults] = useState(false)
+  const [computedResults, setComputedResults] = useState({})
   
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
@@ -692,10 +694,35 @@ function RankingPage() {
       }
     }
     setAlternativesScores(newScores)
+    
+    // Clear computed results when data changes
+    if (showComputedResults) {
+      setShowComputedResults(false)
+      setComputedResults({})
+    }
+    
     // Auto-save only the changed cell
     rankingAPI.updateCell('score', alternative, column, scoreValue).catch(error => {
       console.error('Error updating score:', error)
     })
+  }
+  
+  const handleCalculateComputedResults = () => {
+    const newComputedResults = {}
+    Object.keys(alternativesScores).forEach(alt => {
+      newComputedResults[alt] = calculateComputedValues(alt)
+    })
+    setComputedResults(newComputedResults)
+    setShowComputedResults(true)
+    setMessage({ type: 'success', text: 'Computed results calculated successfully' })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+  
+  const handleHideComputedResults = () => {
+    setShowComputedResults(false)
+    setComputedResults({})
+    setMessage({ type: 'info', text: 'Computed results hidden' })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
 
   const handleAddColumn = () => {
@@ -751,6 +778,10 @@ function RankingPage() {
     
     setCriteriaWeights(newWeights)
     setAlternativesScores(newScores)
+    
+    // Clear computed results when columns change
+    setShowComputedResults(false)
+    setComputedResults({})
     
     // Save to backend
     updateRanking(newWeights, newScores, rankingResult, newColumns, newGroups)
@@ -820,6 +851,10 @@ function RankingPage() {
       })
     })
     setAlternativesScores(newScores)
+    
+    // Clear computed results when groups change
+    setShowComputedResults(false)
+    setComputedResults({})
     
     // Close modal and reset selection
     setShowAddGroupModal(false)
@@ -910,6 +945,10 @@ function RankingPage() {
       newScores[alt] = altScores
     })
     setAlternativesScores(newScores)
+    
+    // Clear computed results when groups change
+    setShowComputedResults(false)
+    setComputedResults({})
     
     // Save to backend
     updateRanking(newWeights, newScores, rankingResult, newColumns, newGroups)
@@ -1002,6 +1041,22 @@ function RankingPage() {
             >
               Add Column
             </button>
+            {!showComputedResults ? (
+              <button
+                onClick={handleCalculateComputedResults}
+                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                disabled={Object.keys(alternativesScores).length === 0 || columnGroups.length === 0}
+              >
+                Calculate Computed Results
+              </button>
+            ) : (
+              <button
+                onClick={handleHideComputedResults}
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Hide Computed Results
+              </button>
+            )}
           </div>
         </div>
 
@@ -1090,13 +1145,6 @@ function RankingPage() {
             {(() => {
               const { development, aging, operation, other } = organizeGroupsByPhase(columnGroups)
               
-              // Calculate column spans
-              const devCols = development.reduce((sum, g) => sum + g.columns.length, 0)
-              const agingCols = aging.reduce((sum, g) => sum + g.columns.length, 0)
-              const opCols = operation.reduce((sum, g) => sum + g.columns.length, 0)
-              const otherCols = other.reduce((sum, g) => sum + g.columns.length, 0)
-              const totalLeafCols = devCols + agingCols + opCols + otherCols
-              
               // Determine which computed columns to show
               const hasD = development.some(g => extractGroupToken(g.name) === 'D')
               const hasP = development.some(g => extractGroupToken(g.name) === 'P')
@@ -1104,38 +1152,126 @@ function RankingPage() {
               const hasF = aging.length > 0
               const hasO = operation.some(g => extractGroupToken(g.name) === 'O')
               const hasM = operation.some(g => extractGroupToken(g.name) === 'M')
-              
-              const computedCols = []
-              if (hasD) computedCols.push('D')
-              if (hasP) computedCols.push('P')
-              if (hasC) computedCols.push('C')
               const hasDevelopment = hasD || hasP || hasC
-              if (hasDevelopment) computedCols.push('a')
-              if (hasF) computedCols.push('F(t)')
-              if (hasO) computedCols.push('O')
-              if (hasM) computedCols.push('M')
               const hasOperation = hasO || hasM
-              if (hasOperation) computedCols.push('V')
-              // Always add a·V·F(t) if we can calculate it (have at least a, V, and F(t))
-              // The calculation function will handle cases where some values are 0
-              if (hasDevelopment && hasOperation && hasF) {
-                computedCols.push('a·V·F(t)')
-              } else if (hasDevelopment && hasOperation) {
-                // If we have a and V but no F(t), still show the column (will be calculated as weighted average of a and V)
-                computedCols.push('a·V·F(t)')
-              } else if (hasDevelopment && hasF) {
-                // If we have a and F(t) but no V, still show the column (will be calculated as weighted average of a and F(t))
-                computedCols.push('a·V·F(t)')
-              } else if (hasOperation && hasF) {
-                // If we have V and F(t) but no a, still show the column (will be calculated as weighted average of V and F(t))
-                computedCols.push('a·V·F(t)')
+              
+              // Build ordered groups list with computed columns inserted at appropriate positions
+              const orderedGroupsWithComputed = []
+              
+              // Development phase groups
+              development.forEach((group, idx) => {
+                orderedGroupsWithComputed.push({ type: 'group', group })
+                const token = extractGroupToken(group.name)
+                // Add computed column after each group
+                if (showComputedResults) {
+                  if (token === 'D' && hasD) {
+                    orderedGroupsWithComputed.push({ type: 'computed', name: 'D' })
+                  } else if (token === 'P' && hasP) {
+                    orderedGroupsWithComputed.push({ type: 'computed', name: 'P' })
+                  } else if (token === 'C' && hasC) {
+                    orderedGroupsWithComputed.push({ type: 'computed', name: 'C' })
+                  }
+                }
+              })
+              
+              // Add 'a' after all development groups (not after last group)
+              if (development.length > 0 && showComputedResults && hasDevelopment) {
+                orderedGroupsWithComputed.push({ type: 'computed', name: 'a' })
               }
               
-              const computedColsCount = computedCols.length
-              const totalCols = 2 + totalLeafCols + computedColsCount
+              // Aging groups
+              aging.forEach((group, idx) => {
+                orderedGroupsWithComputed.push({ type: 'group', group })
+                // Add F(t) after F(t) group
+                if (idx === aging.length - 1 && showComputedResults && hasF) {
+                  orderedGroupsWithComputed.push({ type: 'computed', name: 'F(t)' })
+                }
+              })
               
-              // Build ordered groups list
-              const orderedGroups = [...development, ...aging, ...operation, ...other]
+              // Operation phase groups
+              operation.forEach((group, idx) => {
+                orderedGroupsWithComputed.push({ type: 'group', group })
+                const token = extractGroupToken(group.name)
+                // Add computed column after each group
+                if (showComputedResults) {
+                  if (token === 'O' && hasO) {
+                    orderedGroupsWithComputed.push({ type: 'computed', name: 'O' })
+                  } else if (token === 'M' && hasM) {
+                    orderedGroupsWithComputed.push({ type: 'computed', name: 'M' })
+                  }
+                }
+              })
+              
+              // Add 'V' after all operation groups (not after last group)
+              if (operation.length > 0 && showComputedResults && hasOperation) {
+                orderedGroupsWithComputed.push({ type: 'computed', name: 'V' })
+              }
+              
+              // Other groups
+              other.forEach(group => {
+                orderedGroupsWithComputed.push({ type: 'group', group })
+              })
+              
+              // Add final a·V·F(t) at the end
+              if (showComputedResults && ((hasDevelopment && hasOperation && hasF) || 
+                  (hasDevelopment && hasOperation) || 
+                  (hasDevelopment && hasF) || 
+                  (hasOperation && hasF))) {
+                orderedGroupsWithComputed.push({ type: 'computed', name: 'a·V·F(t)' })
+              }
+              
+              // Calculate total columns
+              let totalCols = 2 // Row No + Alternative
+              orderedGroupsWithComputed.forEach(item => {
+                if (item.type === 'group') {
+                  totalCols += item.group.columns.length
+                } else {
+                  totalCols += 1
+                }
+              })
+              
+              // Calculate column spans for phase headers
+              let devCols = 0
+              let devComputedCols = 0
+              development.forEach((group) => {
+                devCols += group.columns.length
+                if (showComputedResults) {
+                  const token = extractGroupToken(group.name)
+                  if (token === 'D' && hasD) devComputedCols++
+                  else if (token === 'P' && hasP) devComputedCols++
+                  else if (token === 'C' && hasC) devComputedCols++
+                }
+              })
+              // Add 'a' after all development groups
+              if (showComputedResults && hasDevelopment) devComputedCols++
+              
+              let agingCols = 0
+              let agingComputedCols = 0
+              aging.forEach((group, idx) => {
+                agingCols += group.columns.length
+                if (idx === aging.length - 1 && showComputedResults && hasF) {
+                  agingComputedCols++ // F(t)
+                }
+              })
+              
+              let opCols = 0
+              let opComputedCols = 0
+              operation.forEach((group) => {
+                opCols += group.columns.length
+                if (showComputedResults) {
+                  const token = extractGroupToken(group.name)
+                  if (token === 'O' && hasO) opComputedCols++
+                  else if (token === 'M' && hasM) opComputedCols++
+                }
+              })
+              // Add 'V' after all operation groups
+              if (showComputedResults && hasOperation) opComputedCols++
+              
+              const otherCols = other.reduce((sum, g) => sum + g.columns.length, 0)
+              const finalComputedCols = showComputedResults && ((hasDevelopment && hasOperation && hasF) || 
+                (hasDevelopment && hasOperation) || 
+                (hasDevelopment && hasF) || 
+                (hasOperation && hasF)) ? 1 : 0
               
               return (
                 <table className="w-full bg-white border border-gray-300" style={{ tableLayout: 'auto' }}>
@@ -1176,117 +1312,187 @@ function RankingPage() {
                       >
                         Alternative
                       </th>
-                      {devCols > 0 && (
+                      {(devCols + devComputedCols) > 0 && (
                         <th 
                           className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
-                          colSpan={devCols}
+                          colSpan={devCols + devComputedCols}
                         >
                           Factors Related to Equipment Development Phase (Parameters: a)
                         </th>
                       )}
-                      {agingCols > 0 && (
+                      {(agingCols + agingComputedCols) > 0 && (
                         <th 
-                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${opCols > 0 || computedColsCount > 0 ? 'border-r border-gray-300' : ''}`}
-                          colSpan={agingCols}
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${(opCols + opComputedCols) > 0 || otherCols > 0 || finalComputedCols > 0 ? 'border-r border-gray-300' : ''}`}
+                          colSpan={agingCols + agingComputedCols}
                         >
                           Equipment Aging and Lifetime F(t)
                         </th>
                       )}
-                      {opCols > 0 && (
+                      {(opCols + opComputedCols) > 0 && (
                         <th 
-                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${computedColsCount > 0 ? 'border-r border-gray-300' : ''}`}
-                          colSpan={opCols}
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${otherCols > 0 || finalComputedCols > 0 ? 'border-r border-gray-300' : ''}`}
+                          colSpan={opCols + opComputedCols}
                         >
                           Factors Related to Equipment Operation Phase (Variables: V)
                         </th>
                       )}
                       {otherCols > 0 && (
                         <th 
-                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${computedColsCount > 0 ? 'border-r border-gray-300' : ''}`}
+                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${finalComputedCols > 0 ? 'border-r border-gray-300' : ''}`}
                           colSpan={otherCols}
                         >
                           Other
                         </th>
                       )}
-                      {computedColsCount > 0 && (
+                      {finalComputedCols > 0 && (
                         <th 
                           className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
-                          colSpan={computedColsCount}
+                          colSpan={finalComputedCols}
                         >
-                          Computed Results
+                          Weights of Factors Leading to the Occurrence of the Main Cause of Deviation
                         </th>
                       )}
                     </tr>
                     
                     {/* Row 4: Group Headers */}
                     <tr className="bg-gray-100">
-                      {orderedGroups.map((group, groupIndex) => {
-                        const isLastInPhase = 
-                          (groupIndex === development.length - 1 && development.length > 0) ||
-                          (groupIndex === development.length + aging.length - 1 && aging.length > 0) ||
-                          (groupIndex === development.length + aging.length + operation.length - 1 && operation.length > 0) ||
-                          (groupIndex === orderedGroups.length - 1)
-                        const hasRightBorder = !isLastInPhase || computedColsCount > 0
-                        return (
-                          <th 
-                            key={group.name}
-                            className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
-                              hasRightBorder ? 'border-r border-gray-300' : ''
-                            }`}
-                            colSpan={group.columns.length}
-                          >
-                            <div className="flex items-center justify-center gap-2">
-                              <span>{group.name}</span>
-                              <button
-                                onClick={() => handleDeleteGroup(group.name)}
-                                className="text-red-500 hover:text-red-700 text-xs font-normal px-1 py-0.5 rounded hover:bg-red-50 transition-colors"
-                                title="Delete group"
+                      {orderedGroupsWithComputed
+                        .filter(item => item.type === 'group' || (item.type === 'computed' && (item.name === 'a' || item.name === 'V' || item.name === 'a·V·F(t)')))
+                        .map((item, itemIndex, filteredArray) => {
+                          if (item.type === 'group') {
+                            const group = item.group
+                            const token = extractGroupToken(group.name)
+                            const isLastDevGroup = development.indexOf(group) === development.length - 1
+                            const isLastOpGroup = operation.indexOf(group) === operation.length - 1
+                            const isLastAgingGroup = aging.indexOf(group) === aging.length - 1
+                            
+                            // Calculate computed columns that should come after this group (based on logic, not orderedGroupsWithComputed)
+                            // Note: 'a' and 'V' are phase-level, not group-level, so they don't belong to any single group
+                            let computedAfterCount = 0
+                            if (showComputedResults) {
+                              // Group-level computed columns only
+                              if (token === 'D' && hasD) computedAfterCount++
+                              else if (token === 'P' && hasP) computedAfterCount++
+                              else if (token === 'C' && hasC) computedAfterCount++
+                              else if (token === 'O' && hasO) computedAfterCount++
+                              else if (token === 'M' && hasM) computedAfterCount++
+                              else if (token === 'F(t)' && hasF && isLastAgingGroup) computedAfterCount++
+                            }
+                            
+                            // Check if next item is a phase-level computed column (a or V), standalone computed (a·V·F(t)), or another group
+                            const nextItem = itemIndex < filteredArray.length - 1 ? filteredArray[itemIndex + 1] : null
+                            const hasPhaseLevelComputedAfter = nextItem && nextItem.type === 'computed' && 
+                              ((isLastDevGroup && nextItem.name === 'a') || (isLastOpGroup && nextItem.name === 'V'))
+                            const hasStandaloneComputedAfter = nextItem && nextItem.type === 'computed' && nextItem.name === 'a·V·F(t)'
+                            const hasMoreGroups = nextItem && nextItem.type === 'group'
+                            
+                            const hasRightBorder = hasMoreGroups || hasStandaloneComputedAfter || hasPhaseLevelComputedAfter || computedAfterCount > 0
+                            
+                            const colSpan = group.columns.length + computedAfterCount
+                            
+                            return (
+                              <th 
+                                key={group.name}
+                                className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                                  hasRightBorder ? 'border-r border-gray-300' : ''
+                                }`}
+                                colSpan={colSpan}
                               >
-                                ×
-                              </button>
-                            </div>
-                          </th>
-                        )
-                      })}
-                      {computedColsCount > 0 && (
-                        <th 
-                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
-                          colSpan={computedColsCount}
-                        >
-                          {/* Can add sub-levels here if needed */}
-                        </th>
-                      )}
+                                <div className="flex items-center justify-center gap-2">
+                                  <span>{group.name}</span>
+                                  <button
+                                    onClick={() => handleDeleteGroup(group.name)}
+                                    className="text-red-500 hover:text-red-700 text-xs font-normal px-1 py-0.5 rounded hover:bg-red-50 transition-colors"
+                                    title="Delete group"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              </th>
+                            )
+                          } else if (item.type === 'computed') {
+                            // Phase-level computed columns (a, V) and standalone (a·V·F(t)) get empty headers in Row 4
+                            const isLastItem = itemIndex === filteredArray.length - 1
+                            return (
+                              <th 
+                                key={`computed_header_${item.name}`}
+                                className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                                  !isLastItem ? 'border-r border-gray-300' : ''
+                                }`}
+                                colSpan={1}
+                              >
+                                {/* Empty for group header row - computed columns don't have group headers */}
+                              </th>
+                            )
+                          }
+                          return null
+                        })}
                     </tr>
                     
                     {/* Row 5: Leaf Criteria and Computed Column Headers */}
                     <tr className="bg-gray-100">
-                      {orderedGroups.map((group, groupIndex) => 
-                        group.columns.map((col, colIndex) => {
-                          const isLastInGroup = colIndex === group.columns.length - 1
-                          const isLastGroup = groupIndex === orderedGroups.length - 1
-                          const hasRightBorder = !isLastInGroup || (!isLastGroup && computedColsCount === 0)
+                      {orderedGroupsWithComputed.map((item, itemIndex) => {
+                        if (item.type === 'group') {
+                          const group = item.group
+                          const token = extractGroupToken(group.name)
+                          const isLastDevGroup = development.indexOf(group) === development.length - 1
+                          const isLastOpGroup = operation.indexOf(group) === operation.length - 1
+                          
+                          // Check if next item is a computed column that should be rendered after this group
+                          // Note: 'a' comes after all development groups, 'V' comes after all operation groups
+                          const nextItem = itemIndex < orderedGroupsWithComputed.length - 1 ? orderedGroupsWithComputed[itemIndex + 1] : null
+                          const hasComputedAfter = nextItem && nextItem.type === 'computed' && (
+                            (token === 'D' && nextItem.name === 'D') ||
+                            (token === 'P' && nextItem.name === 'P') ||
+                            (token === 'C' && nextItem.name === 'C') ||
+                            (token === 'O' && nextItem.name === 'O') ||
+                            (token === 'M' && nextItem.name === 'M') ||
+                            (token === 'F(t)' && nextItem.name === 'F(t)')
+                          )
+                          // Check if next item is phase-level computed column (a or V)
+                          // 'a' comes after all development groups, 'V' comes after all operation groups
+                          const hasPhaseLevelComputedAfter = nextItem && nextItem.type === 'computed' && (
+                            (isLastDevGroup && nextItem.name === 'a') ||
+                            (isLastOpGroup && nextItem.name === 'V')
+                          )
+                          
+                          return group.columns.map((col, colIndex) => {
+                            const isLastInGroup = colIndex === group.columns.length - 1
+                            // For phase-level computed columns (a, V), they come after all groups in their phase
+                            // So we don't add border after the last column of the last group in each phase
+                            const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1 && !hasComputedAfter && !hasPhaseLevelComputedAfter
+                            // Only add border if:
+                            // 1. Not the last column in group, OR
+                            // 2. Has group-level computed column after (D, P, C, O, M, F(t)), OR
+                            // 3. Not the last item overall
+                            // Note: We don't add border for phase-level computed columns (a, V) because they're rendered separately
+                            const hasRightBorder = !isLastInGroup || hasComputedAfter || (!hasPhaseLevelComputedAfter && !isLastItem)
+                            return (
+                              <th 
+                                key={`${group.name}__${col}`}
+                                className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
+                                  hasRightBorder ? 'border-r border-gray-300' : ''
+                                }`}
+                              >
+                                {displayCriteriaLabel(col)}
+                              </th>
+                            )
+                          })
+                        } else {
+                          // Computed column header - render it here since it's already in orderedGroupsWithComputed
+                          const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1
                           return (
                             <th 
-                              key={`${group.name}__${col}`}
-                              className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
-                                hasRightBorder ? 'border-r border-gray-300' : ''
+                              key={`computed_${item.name}`}
+                              className={`px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase bg-gray-50 w-[100px] ${
+                                !isLastItem ? 'border-r border-gray-300' : ''
                               }`}
                             >
-                              {displayCriteriaLabel(col)}
+                              {item.name}
                             </th>
                           )
-                        })
-                      )}
-                      {computedCols.map((colName, idx) => (
-                        <th 
-                          key={`computed_${colName}`}
-                          className={`px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase bg-gray-50 w-[100px] ${
-                            idx < computedCols.length - 1 ? 'border-r border-gray-300' : ''
-                          }`}
-                        >
-                          {colName}
-                        </th>
-                      ))}
+                        }
+                      })}
                     </tr>
                   </thead>
                   <tbody>
@@ -1294,57 +1500,90 @@ function RankingPage() {
                       const rowNoA = extractRowNoFromKey(a) || 0
                       const rowNoB = extractRowNoFromKey(b) || 0
                       return rowNoA - rowNoB
-                    }).map((alt) => {
-                      const rowNo = extractRowNoFromKey(alt) || ''
-                      const computedValues = calculateComputedValues(alt)
-                      
-                      return (
-                        <tr key={alt}>
-                          <td className="px-3 py-3 border-b border-r font-medium text-gray-600 w-[80px]">{rowNo}</td>
-                          <td className="px-3 py-3 border-b border-r font-medium w-[150px] text-sm">{alt}</td>
-                          
-                          {/* Leaf input columns */}
-                          {orderedGroups.map((group, groupIndex) => 
-                            group.columns.map((col, colIndex) => {
-                              const isLastInGroup = colIndex === group.columns.length - 1
-                              const isLastGroup = groupIndex === orderedGroups.length - 1
-                              const hasRightBorder = !isLastInGroup || (!isLastGroup && computedColsCount === 0)
-                              return (
-                                <td 
-                                  key={`${group.name}__${col}`}
-                                  className={`px-3 py-3 border-b w-[120px] ${
-                                    hasRightBorder ? 'border-r border-gray-300' : ''
-                                  }`}
-                                >
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={alternativesScores[alt][col] || ''}
-                                    onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                                    className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  />
-                                </td>
-                              )
-                            })
-                          )}
-                          
-                          {/* Computed columns */}
-                          {computedCols.map((colName, idx) => (
-                            <td 
-                              key={`computed_${colName}_${alt}`}
-                              className={`px-3 py-3 border-b bg-gray-50 font-semibold text-center w-[100px] ${
-                                idx < computedCols.length - 1 ? 'border-r border-gray-300' : ''
-                              }`}
-                            >
-                              {computedValues[colName] !== undefined 
-                                ? computedValues[colName].toFixed(3)
-                                : '-'
-                              }
-                            </td>
-                          ))}
-                        </tr>
-                      )
-                    })}
+                     }).map((alt) => {
+                       const rowNo = extractRowNoFromKey(alt) || ''
+                       const computedValues = showComputedResults ? computedResults[alt] || {} : {}
+                       
+                       return (
+                         <tr key={alt}>
+                           <td className="px-3 py-3 border-b border-r font-medium text-gray-600 w-[80px]">{rowNo}</td>
+                           <td className="px-3 py-3 border-b border-r font-medium w-[150px] text-sm">{alt}</td>
+                           
+                           {/* Leaf input columns and computed columns interleaved */}
+                           {orderedGroupsWithComputed.map((item, itemIndex) => {
+                             if (item.type === 'group') {
+                               const group = item.group
+                               const token = extractGroupToken(group.name)
+                               const isLastDevGroup = development.indexOf(group) === development.length - 1
+                               const isLastOpGroup = operation.indexOf(group) === operation.length - 1
+                               
+                               // Check if next item is a computed column that should be rendered after this group
+                               // Note: 'a' comes after all development groups, 'V' comes after all operation groups
+                               const nextItem = itemIndex < orderedGroupsWithComputed.length - 1 ? orderedGroupsWithComputed[itemIndex + 1] : null
+                               const hasComputedAfter = nextItem && nextItem.type === 'computed' && (
+                                 (token === 'D' && nextItem.name === 'D') ||
+                                 (token === 'P' && nextItem.name === 'P') ||
+                                 (token === 'C' && nextItem.name === 'C') ||
+                                 (token === 'O' && nextItem.name === 'O') ||
+                                 (token === 'M' && nextItem.name === 'M') ||
+                                 (token === 'F(t)' && nextItem.name === 'F(t)')
+                               )
+                               // Check if next item is phase-level computed column (a or V)
+                               // 'a' comes after all development groups, 'V' comes after all operation groups
+                               const hasPhaseLevelComputedAfter = nextItem && nextItem.type === 'computed' && (
+                                 (isLastDevGroup && nextItem.name === 'a') ||
+                                 (isLastOpGroup && nextItem.name === 'V')
+                               )
+                               
+                               return group.columns.map((col, colIndex) => {
+                                 const isLastInGroup = colIndex === group.columns.length - 1
+                                 // For phase-level computed columns (a, V), they come after all groups in their phase
+                                 // So we don't add border after the last column of the last group in each phase
+                                 const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1 && !hasComputedAfter && !hasPhaseLevelComputedAfter
+                                 // Only add border if:
+                                 // 1. Not the last column in group, OR
+                                 // 2. Has group-level computed column after (D, P, C, O, M, F(t)), OR
+                                 // 3. Not the last item overall
+                                 // Note: We don't add border for phase-level computed columns (a, V) because they're rendered separately
+                                 const hasRightBorder = !isLastInGroup || hasComputedAfter || (!hasPhaseLevelComputedAfter && !isLastItem)
+                                 return (
+                                   <td 
+                                     key={`${group.name}__${col}`}
+                                     className={`px-3 py-3 border-b w-[120px] ${
+                                       hasRightBorder ? 'border-r border-gray-300' : ''
+                                     }`}
+                                   >
+                                     <input
+                                       type="number"
+                                       step="0.1"
+                                       value={alternativesScores[alt][col] || ''}
+                                       onChange={(e) => handleScoreChange(alt, col, e.target.value)}
+                                       className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                     />
+                                   </td>
+                                 )
+                               })
+                             } else {
+                               // Computed column cell - render it here since it's already in orderedGroupsWithComputed
+                               const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1
+                               return (
+                                 <td 
+                                   key={`computed_${item.name}_${alt}`}
+                                   className={`px-3 py-3 border-b bg-gray-50 font-semibold text-center w-[100px] ${
+                                     !isLastItem ? 'border-r border-gray-300' : ''
+                                   }`}
+                                 >
+                                   {computedValues[item.name] !== undefined 
+                                     ? computedValues[item.name].toFixed(3)
+                                     : '-'
+                                   }
+                                 </td>
+                               )
+                             }
+                           })}
+                         </tr>
+                       )
+                     })}
                   </tbody>
                 </table>
               )
