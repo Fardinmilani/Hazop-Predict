@@ -1142,7 +1142,20 @@ def update_ranking():
                         scores_rows.append(row)
                 else:
                     # No project rows, use alternatives_scores as is
-                    for alt in sorted(alternatives_scores.keys()):
+                    # Helper function to extract numeric value from alternative key for sorting
+                    def extract_alt_number(alt_key):
+                        """Extract numeric value from alternative key (e.g., 'Alternative 1' -> 1)"""
+                        import re
+                        if isinstance(alt_key, str):
+                            match = re.search(r'\d+', alt_key)
+                            if match:
+                                return int(match.group())
+                        return 0
+                    
+                    # Sort alternatives by numeric value (Alternative 1, 2, 3...)
+                    sorted_alternatives = sorted(alternatives_scores.keys(), key=lambda x: extract_alt_number(str(x)))
+                    
+                    for alt in sorted_alternatives:
                         row = {'alternative': str(alt)}
                         scores = alternatives_scores.get(alt, {})
                         for criteria in all_criteria:

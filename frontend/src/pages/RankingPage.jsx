@@ -289,8 +289,20 @@ function RankingPage() {
       if (data.rankingResult) {
         setRankingResult(data.rankingResult)
       }
+      if (data.columns) {
+        setRankingColumns(data.columns)
+      }
+      if (data.groups) {
+        setColumnGroups(data.groups)
+      }
       // Save the loaded data
-      await updateRanking(data.criteriaWeights || {}, data.alternativesScores || {}, data.rankingResult || null)
+      await updateRanking(
+        data.criteriaWeights || {}, 
+        data.alternativesScores || {}, 
+        data.rankingResult || null,
+        data.columns || [],
+        data.groups || []
+      )
     }
     
     // Listen for ranking deletion/clear event

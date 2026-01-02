@@ -322,14 +322,16 @@ function FilePage() {
                 projectData.criteriaWeights || {},
                 projectData.alternativesScores || {},
                 projectData.rankingResult || null,
-                projectData.rankingColumns || projectData.columns || []
+                projectData.rankingColumns || projectData.columns || [],
+                projectData.groups || []
               )
               // Dispatch event to load in RankingPage
               window.dispatchEvent(new CustomEvent('ranking-open', { detail: {
                 criteriaWeights: projectData.criteriaWeights || {},
                 alternativesScores: projectData.alternativesScores || {},
                 rankingResult: projectData.rankingResult || null,
-                columns: projectData.rankingColumns || projectData.columns || []
+                columns: projectData.rankingColumns || projectData.columns || [],
+                groups: projectData.groups || []
               } }))
             }
             
@@ -350,7 +352,8 @@ function FilePage() {
               rankingData.criteriaWeights || {},
               rankingData.alternativesScores || {},
               rankingData.rankingResult || null,
-              rankingData.columns || []
+              rankingData.columns || [],
+              rankingData.groups || []
             )
             // Then dispatch event to load in RankingPage
             window.dispatchEvent(new CustomEvent('ranking-open', { detail: rankingData }))
@@ -526,7 +529,8 @@ function FilePage() {
               criteriaWeights: rankingData.criteriaWeights || {},
               alternativesScores: rankingData.alternativesScores || {},
               rankingResult: rankingData.rankingResult || null,
-              rankingColumns: rankingData.columns || [] // Store ranking columns separately
+              rankingColumns: rankingData.columns || [], // Store ranking columns separately
+              groups: rankingData.groups || [] // Store groups separately
             })
           }
 
@@ -603,7 +607,8 @@ function FilePage() {
                 criteriaWeights: rankingData.criteriaWeights || {},
                 alternativesScores: rankingData.alternativesScores || {},
                 rankingResult: rankingData.rankingResult || null,
-                rankingColumns: rankingData.columns || [] // Store ranking columns separately
+                rankingColumns: rankingData.columns || [], // Store ranking columns separately
+                groups: rankingData.groups || [] // Store groups separately
               })
             }
 
@@ -956,17 +961,6 @@ function FilePage() {
                   <div className="text-xs text-gray-500">Save library configuration</div>
                 </div>
               </label>
-              <label className="flex items-center space-x-3 p-3 border border-gray-300 rounded hover:bg-blue-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  id="save-ranking"
-                  className="rounded"
-                />
-                <div>
-                  <div className="font-medium text-gray-800">Ranking</div>
-                  <div className="text-xs text-gray-500">Save ranking data</div>
-                </div>
-              </label>
             </div>
             <div className="mt-4 flex space-x-2">
               <button
@@ -977,9 +971,6 @@ function FilePage() {
                   }
                   if (document.getElementById('save-library').checked) {
                     selected.push('library')
-                  }
-                  if (document.getElementById('save-ranking').checked) {
-                    selected.push('ranking')
                   }
                   handleSave(selected)
                 }}

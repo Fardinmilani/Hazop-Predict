@@ -167,6 +167,29 @@ def open_file():
                                 if pd.notna(col) and col:
                                     ranking_columns.append(col)
                     
+                    # Sheet 0.5: Ranking Groups (optional)
+                    ranking_groups = []
+                    if 'RankingGroups' in xls.sheet_names:
+                        file_stream.seek(0)
+                        try:
+                            df_groups = pd.read_excel(file_stream, sheet_name='RankingGroups')
+                            for _, row in df_groups.iterrows():
+                                if 'group_name' in row and 'columns' in row:
+                                    try:
+                                        group_name = str(row['group_name']).strip()
+                                        columns_str = str(row['columns']).strip()
+                                        if pd.notna(group_name) and pd.notna(columns_str):
+                                            # Parse columns string (e.g., "col1,col2,col3")
+                                            columns = [col.strip() for col in columns_str.split(',') if col.strip()]
+                                            ranking_groups.append({
+                                                'name': group_name,
+                                                'columns': columns
+                                            })
+                                    except (ValueError, TypeError):
+                                        continue
+                        except Exception:
+                            pass
+                    
                     # Sheet 1: Criteria Weights
                     if 'CriteriaWeights' in xls.sheet_names:
                         file_stream.seek(0)
@@ -229,7 +252,8 @@ def open_file():
                             'criteriaWeights': criteria_weights,
                             'alternativesScores': alternatives_scores,
                             'rankingResult': ranking_result,
-                            'rankingColumns': ranking_columns
+                            'rankingColumns': ranking_columns,
+                            'groups': ranking_groups
                         }
                     else:
                         # Only ranking data
@@ -237,7 +261,8 @@ def open_file():
                             'criteriaWeights': criteria_weights,
                             'alternativesScores': alternatives_scores,
                             'rankingResult': ranking_result,
-                            'columns': ranking_columns
+                            'columns': ranking_columns,
+                            'groups': ranking_groups
                         }
                 else:
                     # Regular Excel file - read first sheet (could be Project sheet)
@@ -335,6 +360,7 @@ def save():
             ranking_result = file_data.get('rankingResult', None)
             # Use rankingColumns if provided (when combined with project data), otherwise use columns (ranking-only data)
             ranking_columns = file_data.get('rankingColumns', []) if has_project_data else file_data.get('columns', [])
+            ranking_groups = file_data.get('groups', []) if has_project_data else file_data.get('groups', [])
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -391,6 +417,23 @@ def save():
                     ])
                     df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
                 
+                # Sheet: Ranking Groups
+                if ranking_groups:
+                    groups_data = []
+                    for group in ranking_groups:
+                        if isinstance(group, dict) and 'name' in group and 'columns' in group and group['columns']:
+                            groups_data.append({
+                                'group_name': group['name'],
+                                'columns': ','.join(group['columns'])
+                            })
+                    if groups_data:
+                        df_groups = pd.DataFrame(groups_data)
+                        df_groups.to_excel(writer, sheet_name='RankingGroups', index=False)
+                    else:
+                        pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
+                else:
+                    pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
+                
                 # Sheet: Criteria Weights
                 if criteria_weights:
                     df_weights = pd.DataFrame([
@@ -413,9 +456,22 @@ def save():
                     
                     all_criteria = sorted(list(all_criteria))
                     
+                    # Helper function to extract numeric value from alternative key for sorting
+                    def extract_alt_number(alt_key):
+                        """Extract numeric value from alternative key (e.g., 'Alternative 1' -> 1)"""
+                        import re
+                        if isinstance(alt_key, str):
+                            match = re.search(r'\d+', alt_key)
+                            if match:
+                                return int(match.group())
+                        return 0
+                    
+                    # Sort alternatives by numeric value (Alternative 1, 2, 3...)
+                    sorted_alternatives = sorted(alternatives_scores.keys(), key=lambda x: extract_alt_number(str(x)))
+                    
                     # Build table structure: alternative column + criteria columns
                     scores_rows = []
-                    for alt in sorted(alternatives_scores.keys()):
+                    for alt in sorted_alternatives:
                         row = {'alternative': str(alt)}
                         scores = alternatives_scores.get(alt, {})
                         for criteria in all_criteria:
