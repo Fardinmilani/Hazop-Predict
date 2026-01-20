@@ -98,8 +98,13 @@ def migrate_ranking_data():
                 df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
             
             if criteria_weights:
+                # Note: criteria_directions not available in migration, use default 'direct'
                 df_weights = pd.DataFrame([
-                    {'criteria': k, 'weight': v} 
+                    {
+                        'criteria': k, 
+                        'weight': v,
+                        'direction': 'direct'  # Default direction for migration
+                    } 
                     for k, v in criteria_weights.items()
                 ])
                 df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
@@ -1367,7 +1372,11 @@ def update_ranking():
                 'alternativesScores': alternatives_scores,
                 'rankingResult': ranking_result,
                 'columns': ranking_columns,
-                'groups': ranking_groups
+                'groups': ranking_groups,
+                'severityValues': severity_values,
+                'recommendations': recommendations,
+                'optimumWeights': optimum_weights,
+                'criteriaDirections': criteria_directions
             }
         })
     except Exception as e:

@@ -65,21 +65,144 @@ def open_file():
                 else:
                     try:
                         # Load project data from 'Project' or 'Sheet1' sheet
+                        project_rows = []
+                        project_columns = []
                         try:
                             project_df = pd.read_excel(filepath, sheet_name='Project')
                             project_rows = project_df.to_dict('records')
+                            if len(project_rows) > 0:
+                                project_columns = [col for col in list(project_rows[0].keys()) if col != 'rowNo']
                         except:
                             try:
                                 project_df = pd.read_excel(filepath, sheet_name='Sheet1')
                                 project_rows = project_df.to_dict('records')
+                                if len(project_rows) > 0:
+                                    project_columns = [col for col in list(project_rows[0].keys()) if col != 'rowNo']
                             except:
                                 project_rows = []
                         
-                        if len(project_rows) > 0:
-                            columns = list(project_rows[0].keys())
-                            project = {'rows': project_rows, 'columns': columns}
-                        else:
-                            project = {'rows': [], 'columns': []}
+                        # Load ranking data if available
+                        xls = pd.ExcelFile(filepath)
+                        criteria_weights = {}
+                        alternatives_scores = {}
+                        ranking_result = None
+                        ranking_columns = []
+                        ranking_groups = []
+                        severity_values = {}
+                        recommendations = {}
+                        optimum_weights = {}
+                        criteria_directions = {}
+                        
+                        # Load RankingColumns
+                        if 'RankingColumns' in xls.sheet_names:
+                            df_columns = pd.read_excel(filepath, sheet_name='RankingColumns')
+                            for _, row in df_columns.iterrows():
+                                if 'column' in row:
+                                    col = str(row['column']).strip()
+                                    if pd.notna(col) and col:
+                                        ranking_columns.append(col)
+                        
+                        # Load RankingGroups
+                        if 'RankingGroups' in xls.sheet_names:
+                            try:
+                                df_groups = pd.read_excel(filepath, sheet_name='RankingGroups')
+                                for _, row in df_groups.iterrows():
+                                    if 'group_name' in row and 'columns' in row:
+                                        try:
+                                            group_name = str(row['group_name']).strip()
+                                            columns_str = str(row['columns']).strip()
+                                            if pd.notna(group_name) and pd.notna(columns_str):
+                                                columns = [col.strip() for col in columns_str.split(',') if col.strip()]
+                                                ranking_groups.append({
+                                                    'name': group_name,
+                                                    'columns': columns
+                                                })
+                                        except (ValueError, TypeError):
+                                            continue
+                            except Exception:
+                                pass
+                        
+                        # Load CriteriaWeights with directions
+                        if 'CriteriaWeights' in xls.sheet_names:
+                            df_weights = pd.read_excel(filepath, sheet_name='CriteriaWeights')
+                            for _, row in df_weights.iterrows():
+                                if 'criteria' in row and 'weight' in row:
+                                    criteria = str(row['criteria']).strip()
+                                    weight = row['weight']
+                                    if pd.notna(criteria) and pd.notna(weight):
+                                        criteria_weights[criteria] = float(weight)
+                                    # Load direction if available
+                                    if 'direction' in row and pd.notna(row['direction']):
+                                        criteria_directions[criteria] = str(row['direction']).strip()
+                        
+                        # Load AlternativesScores
+                        if 'AlternativesScores' in xls.sheet_names:
+                            df_scores = pd.read_excel(filepath, sheet_name='AlternativesScores')
+                            if 'alternative' in df_scores.columns:
+                                criteria_cols = [col for col in df_scores.columns if col != 'alternative']
+                                for _, row in df_scores.iterrows():
+                                    alt = str(row['alternative']).strip()
+                                    if pd.notna(alt) and alt:
+                                        alternatives_scores[alt] = {}
+                                        for criteria in criteria_cols:
+                                            score = row[criteria]
+                                            if pd.notna(score):
+                                                try:
+                                                    alternatives_scores[alt][criteria] = float(score)
+                                                except (ValueError, TypeError):
+                                                    continue
+                        
+                        # Load RankingResult
+                        if 'RankingResult' in xls.sheet_names:
+                            df_result = pd.read_excel(filepath, sheet_name='RankingResult')
+                            ranking_result = {
+                                'ranking': [
+                                    {'alternative': row['alternative'], 'score': float(row['score'])}
+                                    for _, row in df_result.iterrows()
+                                    if 'alternative' in row and 'score' in row and pd.notna(row['alternative']) and pd.notna(row['score'])
+                                ]
+                            }
+                            if not ranking_result['ranking']:
+                                ranking_result = None
+                        
+                        # Load RiskAssessment
+                        if 'RiskAssessment' in xls.sheet_names:
+                            df_risk = pd.read_excel(filepath, sheet_name='RiskAssessment')
+                            for _, row in df_risk.iterrows():
+                                if 'alternative' in row and pd.notna(row['alternative']):
+                                    alt = str(row['alternative']).strip()
+                                    if 'severity' in row and pd.notna(row['severity']):
+                                        try:
+                                            severity_values[alt] = float(row['severity'])
+                                        except (ValueError, TypeError):
+                                            pass
+                                    if 'recommendation' in row and pd.notna(row['recommendation']):
+                                        recommendations[alt] = str(row['recommendation']).strip()
+                                    if 'optimum_weight' in row and pd.notna(row['optimum_weight']):
+                                        try:
+                                            optimum_weights[alt] = float(row['optimum_weight'])
+                                        except (ValueError, TypeError):
+                                            pass
+                        
+                        # Combine project and ranking data
+                        project = {
+                            'rows': project_rows,
+                            'columns': project_columns
+                        }
+                        
+                        # Add ranking data if available
+                        if criteria_weights or alternatives_scores or ranking_result or ranking_columns:
+                            project.update({
+                                'criteriaWeights': criteria_weights,
+                                'alternativesScores': alternatives_scores,
+                                'rankingResult': ranking_result,
+                                'rankingColumns': ranking_columns,
+                                'groups': ranking_groups,
+                                'severityValues': severity_values,
+                                'recommendations': recommendations,
+                                'optimumWeights': optimum_weights,
+                                'criteriaDirections': criteria_directions
+                            })
                     except Exception as e:
                         project = {'rows': [], 'columns': []}
                 
@@ -190,13 +313,20 @@ def open_file():
                         except Exception:
                             pass
                     
-                    # Sheet 1: Criteria Weights
+                    # Sheet 1: Criteria Weights (with directions)
+                    criteria_directions = {}
                     if 'CriteriaWeights' in xls.sheet_names:
                         file_stream.seek(0)
                         df_weights = pd.read_excel(file_stream, sheet_name='CriteriaWeights')
                         for _, row in df_weights.iterrows():
                             if 'criteria' in row and 'weight' in row:
-                                criteria_weights[row['criteria']] = float(row['weight'])
+                                criteria = str(row['criteria']).strip()
+                                weight = row['weight']
+                                if pd.notna(criteria) and pd.notna(weight):
+                                    criteria_weights[criteria] = float(weight)
+                                # Load direction if available
+                                if 'direction' in row and pd.notna(row['direction']):
+                                    criteria_directions[criteria] = str(row['direction']).strip()
                     
                     # Sheet 2: Alternatives Scores
                     if 'AlternativesScores' in xls.sheet_names:
@@ -243,6 +373,32 @@ def open_file():
                             ]
                         }
                     
+                    # Sheet 4: Risk Assessment & Optimization (optional)
+                    severity_values = {}
+                    recommendations = {}
+                    optimum_weights = {}
+                    if 'RiskAssessment' in xls.sheet_names:
+                        file_stream.seek(0)
+                        df_risk = pd.read_excel(file_stream, sheet_name='RiskAssessment')
+                        for _, row in df_risk.iterrows():
+                            if 'alternative' in row and pd.notna(row['alternative']):
+                                alt = str(row['alternative']).strip()
+                                # Load severity if available
+                                if 'severity' in row and pd.notna(row['severity']):
+                                    try:
+                                        severity_values[alt] = float(row['severity'])
+                                    except (ValueError, TypeError):
+                                        pass
+                                # Load recommendation if available
+                                if 'recommendation' in row and pd.notna(row['recommendation']):
+                                    recommendations[alt] = str(row['recommendation']).strip()
+                                # Load optimum weight if available
+                                if 'optimum_weight' in row and pd.notna(row['optimum_weight']):
+                                    try:
+                                        optimum_weights[alt] = float(row['optimum_weight'])
+                                    except (ValueError, TypeError):
+                                        pass
+                    
                     # Combine project and ranking data
                     if project_rows and len(project_rows) > 0:
                         # Has both project and ranking data
@@ -253,7 +409,11 @@ def open_file():
                             'alternativesScores': alternatives_scores,
                             'rankingResult': ranking_result,
                             'rankingColumns': ranking_columns,
-                            'groups': ranking_groups
+                            'groups': ranking_groups,
+                            'severityValues': severity_values,
+                            'recommendations': recommendations,
+                            'optimumWeights': optimum_weights,
+                            'criteriaDirections': criteria_directions
                         }
                     else:
                         # Only ranking data
@@ -262,7 +422,11 @@ def open_file():
                             'alternativesScores': alternatives_scores,
                             'rankingResult': ranking_result,
                             'columns': ranking_columns,
-                            'groups': ranking_groups
+                            'groups': ranking_groups,
+                            'severityValues': severity_values,
+                            'recommendations': recommendations,
+                            'optimumWeights': optimum_weights,
+                            'criteriaDirections': criteria_directions
                         }
                 else:
                     # Regular Excel file - read first sheet (could be Project sheet)
@@ -361,6 +525,11 @@ def save():
             # Use rankingColumns if provided (when combined with project data), otherwise use columns (ranking-only data)
             ranking_columns = file_data.get('rankingColumns', []) if has_project_data else file_data.get('columns', [])
             ranking_groups = file_data.get('groups', []) if has_project_data else file_data.get('groups', [])
+            # Extract Risk Assessment & Optimization data
+            severity_values = file_data.get('severityValues', {})
+            recommendations = file_data.get('recommendations', {})
+            optimum_weights = file_data.get('optimumWeights', {})
+            criteria_directions = file_data.get('criteriaDirections', {})
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -434,12 +603,29 @@ def save():
                 else:
                     pd.DataFrame(columns=['group_name', 'columns']).to_excel(writer, sheet_name='RankingGroups', index=False)
                 
-                # Sheet: Criteria Weights
+                # Sheet: Criteria Weights (with directions)
                 if criteria_weights:
-                    df_weights = pd.DataFrame([
-                        {'criteria': k, 'weight': v}
-                        for k, v in criteria_weights.items()
-                    ])
+                    df_weights_data = []
+                    for k, v in criteria_weights.items():
+                        row = {'criteria': k, 'weight': v}
+                        # Add direction if available
+                        if k in criteria_directions:
+                            row['direction'] = criteria_directions[k]
+                        else:
+                            row['direction'] = pd.NA
+                        df_weights_data.append(row)
+                    df_weights = pd.DataFrame(df_weights_data)
+                    df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
+                elif criteria_directions:
+                    # Even if no weights, save directions
+                    df_weights_data = []
+                    for k, v in criteria_directions.items():
+                        df_weights_data.append({
+                            'criteria': k,
+                            'weight': pd.NA,
+                            'direction': v
+                        })
+                    df_weights = pd.DataFrame(df_weights_data)
                     df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
                 
                 # Sheet: Alternatives Scores - New format: table with alternative column + criteria columns
@@ -498,6 +684,66 @@ def save():
                     df_result = pd.DataFrame(ranking_result['ranking'])
                     df_result.to_excel(writer, sheet_name='RankingResult', index=False)
                 
+                # Sheet: Risk Assessment & Optimization
+                if severity_values or recommendations or optimum_weights:
+                    risk_rows = []
+                    # Get all alternatives from all three sources
+                    all_alternatives = set()
+                    all_alternatives.update(severity_values.keys())
+                    all_alternatives.update(recommendations.keys())
+                    all_alternatives.update(optimum_weights.keys())
+                    
+                    # Sort alternatives by numeric value
+                    def extract_alt_number(alt_key):
+                        """Extract numeric value from alternative key"""
+                        import re
+                        if isinstance(alt_key, str):
+                            match = re.search(r'\d+', alt_key)
+                            if match:
+                                return int(match.group())
+                        return 0
+                    
+                    sorted_alternatives = sorted(all_alternatives, key=lambda x: extract_alt_number(str(x)))
+                    
+                    for alt in sorted_alternatives:
+                        row = {'alternative': str(alt)}
+                        # Add severity if available
+                        if alt in severity_values:
+                            try:
+                                row['severity'] = float(severity_values[alt])
+                            except (ValueError, TypeError):
+                                row['severity'] = pd.NA
+                        else:
+                            row['severity'] = pd.NA
+                        
+                        # Add recommendation if available
+                        if alt in recommendations:
+                            row['recommendation'] = str(recommendations[alt]).strip() if recommendations[alt] else pd.NA
+                        else:
+                            row['recommendation'] = pd.NA
+                        
+                        # Add optimum weight if available
+                        if alt in optimum_weights:
+                            try:
+                                row['optimum_weight'] = float(optimum_weights[alt])
+                            except (ValueError, TypeError):
+                                row['optimum_weight'] = pd.NA
+                        else:
+                            row['optimum_weight'] = pd.NA
+                        
+                        risk_rows.append(row)
+                    
+                    if risk_rows:
+                        df_risk = pd.DataFrame(risk_rows)
+                        df_risk.to_excel(writer, sheet_name='RiskAssessment', index=False)
+                    else:
+                        pd.DataFrame(columns=['alternative', 'severity', 'recommendation', 'optimum_weight']).to_excel(
+                            writer, sheet_name='RiskAssessment', index=False)
+                else:
+                    # Empty structure
+                    pd.DataFrame(columns=['alternative', 'severity', 'recommendation', 'optimum_weight']).to_excel(
+                        writer, sheet_name='RiskAssessment', index=False)
+                
                 # Apply center alignment to all cells in all sheets
                 workbook = writer.book
                 for sheet_name in workbook.sheetnames:
@@ -518,13 +764,69 @@ def save():
                 DATA_DIR = Path(__file__).parent.parent.parent / 'data'
                 filepath = DATA_DIR / 'project.xlsx'
                 
-                # Load existing ranking data if file exists
+                # Try to get ranking data from file_data first, then from existing file
                 ranking_columns = []
                 criteria_weights = {}
                 alternatives_scores_df = None
                 ranking_result = None
+                severity_values = {}
+                recommendations = {}
+                optimum_weights = {}
+                criteria_directions = {}
                 
-                if filepath.exists():
+                # First, try to get from file_data if available
+                if isinstance(file_data, dict):
+                    ranking_columns = file_data.get('rankingColumns', [])
+                    criteria_weights = file_data.get('criteriaWeights', {})
+                    alternatives_scores = file_data.get('alternativesScores', {})
+                    ranking_result = file_data.get('rankingResult', None)
+                    severity_values = file_data.get('severityValues', {})
+                    recommendations = file_data.get('recommendations', {})
+                    optimum_weights = file_data.get('optimumWeights', {})
+                    criteria_directions = file_data.get('criteriaDirections', {})
+                    
+                    # Convert alternatives_scores to DataFrame format if available
+                    if alternatives_scores:
+                        all_criteria = set()
+                        for alt, scores in alternatives_scores.items():
+                            if scores and isinstance(scores, dict):
+                                all_criteria.update(scores.keys())
+                        if ranking_columns:
+                            all_criteria.update(ranking_columns)
+                        all_criteria = sorted(list(all_criteria))
+                        
+                        def extract_alt_number(alt_key):
+                            import re
+                            if isinstance(alt_key, str):
+                                match = re.search(r'\d+', alt_key)
+                                if match:
+                                    return int(match.group())
+                            return 0
+                        
+                        sorted_alternatives = sorted(alternatives_scores.keys(), key=lambda x: extract_alt_number(str(x)))
+                        scores_rows = []
+                        for alt in sorted_alternatives:
+                            row = {'alternative': str(alt)}
+                            scores = alternatives_scores.get(alt, {})
+                            for criteria in all_criteria:
+                                score_value = scores.get(criteria, '')
+                                if score_value is not None and score_value != '':
+                                    try:
+                                        row[criteria] = float(score_value)
+                                    except (ValueError, TypeError):
+                                        row[criteria] = ''
+                                else:
+                                    row[criteria] = ''
+                            scores_rows.append(row)
+                        if scores_rows:
+                            alternatives_scores_df = pd.DataFrame(scores_rows)
+                    
+                    # Convert ranking_result to DataFrame if available
+                    if ranking_result and ranking_result.get('ranking'):
+                        ranking_result = pd.DataFrame(ranking_result['ranking'])
+                
+                # If not in file_data, try to load from existing file
+                if not ranking_columns and not criteria_weights and filepath.exists():
                     try:
                         xls = pd.ExcelFile(filepath)
                         
@@ -545,6 +847,9 @@ def save():
                                         weight = row['weight']
                                         if pd.notna(criteria) and pd.notna(weight):
                                             criteria_weights[criteria] = float(weight)
+                                        # Load direction if available
+                                        if 'direction' in row and pd.notna(row['direction']):
+                                            criteria_directions[criteria] = str(row['direction']).strip()
                                     except (ValueError, TypeError):
                                         continue
                         
@@ -553,6 +858,24 @@ def save():
                         
                         if 'RankingResult' in xls.sheet_names:
                             ranking_result = pd.read_excel(filepath, sheet_name='RankingResult')
+                        
+                        if 'RiskAssessment' in xls.sheet_names:
+                            df_risk = pd.read_excel(filepath, sheet_name='RiskAssessment')
+                            for _, row in df_risk.iterrows():
+                                if 'alternative' in row and pd.notna(row['alternative']):
+                                    alt = str(row['alternative']).strip()
+                                    if 'severity' in row and pd.notna(row['severity']):
+                                        try:
+                                            severity_values[alt] = float(row['severity'])
+                                        except (ValueError, TypeError):
+                                            pass
+                                    if 'recommendation' in row and pd.notna(row['recommendation']):
+                                        recommendations[alt] = str(row['recommendation']).strip()
+                                    if 'optimum_weight' in row and pd.notna(row['optimum_weight']):
+                                        try:
+                                            optimum_weights[alt] = float(row['optimum_weight'])
+                                        except (ValueError, TypeError):
+                                            pass
                     except Exception:
                         pass
                 
@@ -627,11 +950,29 @@ def save():
                         df_columns = pd.DataFrame([{'column': col} for col in ranking_columns])
                         df_columns.to_excel(writer, sheet_name='RankingColumns', index=False)
                     
+                    # Sheet: Criteria Weights (with directions)
                     if criteria_weights:
-                        df_weights = pd.DataFrame([
-                            {'criteria': k, 'weight': v} 
-                            for k, v in criteria_weights.items()
-                        ])
+                        df_weights_data = []
+                        for k, v in criteria_weights.items():
+                            row = {'criteria': k, 'weight': v}
+                            # Add direction if available
+                            if k in criteria_directions:
+                                row['direction'] = criteria_directions[k]
+                            else:
+                                row['direction'] = pd.NA
+                            df_weights_data.append(row)
+                        df_weights = pd.DataFrame(df_weights_data)
+                        df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
+                    elif criteria_directions:
+                        # Even if no weights, save directions
+                        df_weights_data = []
+                        for k, v in criteria_directions.items():
+                            df_weights_data.append({
+                                'criteria': k,
+                                'weight': pd.NA,
+                                'direction': v
+                            })
+                        df_weights = pd.DataFrame(df_weights_data)
                         df_weights.to_excel(writer, sheet_name='CriteriaWeights', index=False)
                     
                     if alternatives_scores_df is not None and not alternatives_scores_df.empty:
@@ -639,6 +980,65 @@ def save():
                     
                     if ranking_result is not None and not ranking_result.empty:
                         ranking_result.to_excel(writer, sheet_name='RankingResult', index=False)
+                    
+                    # Sheet: Risk Assessment & Optimization
+                    if severity_values or recommendations or optimum_weights:
+                        risk_rows = []
+                        # Get all alternatives from all three sources
+                        all_alternatives = set()
+                        all_alternatives.update(severity_values.keys())
+                        all_alternatives.update(recommendations.keys())
+                        all_alternatives.update(optimum_weights.keys())
+                        
+                        # Sort alternatives by numeric value
+                        def extract_alt_number(alt_key):
+                            import re
+                            if isinstance(alt_key, str):
+                                match = re.search(r'\d+', alt_key)
+                                if match:
+                                    return int(match.group())
+                            return 0
+                        
+                        sorted_alternatives = sorted(all_alternatives, key=lambda x: extract_alt_number(str(x)))
+                        
+                        for alt in sorted_alternatives:
+                            row = {'alternative': str(alt)}
+                            # Add severity if available
+                            if alt in severity_values:
+                                try:
+                                    row['severity'] = float(severity_values[alt])
+                                except (ValueError, TypeError):
+                                    row['severity'] = pd.NA
+                            else:
+                                row['severity'] = pd.NA
+                            
+                            # Add recommendation if available
+                            if alt in recommendations:
+                                row['recommendation'] = str(recommendations[alt]).strip() if recommendations[alt] else pd.NA
+                            else:
+                                row['recommendation'] = pd.NA
+                            
+                            # Add optimum weight if available
+                            if alt in optimum_weights:
+                                try:
+                                    row['optimum_weight'] = float(optimum_weights[alt])
+                                except (ValueError, TypeError):
+                                    row['optimum_weight'] = pd.NA
+                            else:
+                                row['optimum_weight'] = pd.NA
+                            
+                            risk_rows.append(row)
+                        
+                        if risk_rows:
+                            df_risk = pd.DataFrame(risk_rows)
+                            df_risk.to_excel(writer, sheet_name='RiskAssessment', index=False)
+                        else:
+                            pd.DataFrame(columns=['alternative', 'severity', 'recommendation', 'optimum_weight']).to_excel(
+                                writer, sheet_name='RiskAssessment', index=False)
+                    else:
+                        # Empty structure
+                        pd.DataFrame(columns=['alternative', 'severity', 'recommendation', 'optimum_weight']).to_excel(
+                            writer, sheet_name='RiskAssessment', index=False)
                     
                     # Apply center alignment to all cells in all sheets
                     workbook = writer.book
