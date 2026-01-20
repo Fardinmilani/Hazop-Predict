@@ -9,6 +9,7 @@ function RankingPage() {
   const [rankingColumns, setRankingColumns] = useState([])
   const [columnGroups, setColumnGroups] = useState([]) // New state for column groups
   const [criteriaWeights, setCriteriaWeights] = useState({})
+  const [criteriaDirections, setCriteriaDirections] = useState({}) // 'direct' or 'inverse' for each criteria
   const [alternativesScores, setAlternativesScores] = useState({})
   const [rankingResult, setRankingResult] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -22,8 +23,30 @@ function RankingPage() {
   const [showComputedResults, setShowComputedResults] = useState(false)
   const [computedResults, setComputedResults] = useState({})
   
+  // Risk Assessment & Optimization fields
+  const [severityValues, setSeverityValues] = useState({}) // {alternative: severity}
+  const [recommendations, setRecommendations] = useState({}) // {alternative: recommendation}
+  const [optimumWeights, setOptimumWeights] = useState({}) // {alternative: optimumWeight}
+  
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
+  
+  // Refs for debounce timers to optimize API calls
+  const debounceTimersRef = useRef({})
+
+  // Debounce helper function to optimize API calls
+  const debounceSave = (key, saveFunction, delay = 800) => {
+    // Clear existing timer for this key
+    if (debounceTimersRef.current[key]) {
+      clearTimeout(debounceTimersRef.current[key])
+    }
+    
+    // Set new timer
+    debounceTimersRef.current[key] = setTimeout(() => {
+      saveFunction()
+      delete debounceTimersRef.current[key]
+    }, delay)
+  }
 
   const formatAlternativeKey = (rowNo) => `Alternative ${rowNo}`
   const legacyAlternativeKeys = (rowNo) => [
@@ -130,7 +153,10 @@ function RankingPage() {
         if (score !== '' && score !== null && score !== undefined) {
           const numScore = parseFloat(score)
           if (!isNaN(numScore)) {
-            sum += numScore
+            // Apply direction: inverse means higher score = lower risk, so invert
+            const direction = criteriaDirections[col] || 'direct'
+            const adjustedScore = direction === 'inverse' ? (1 / Math.max(numScore, 0.001)) : numScore
+            sum += adjustedScore
             count++
           }
         }
@@ -145,8 +171,11 @@ function RankingPage() {
       if (score !== '' && score !== null && score !== undefined) {
         const numScore = parseFloat(score)
         if (!isNaN(numScore)) {
+          // Apply direction: inverse means higher score = lower risk, so invert
+          const direction = criteriaDirections[col] || 'direct'
+          const adjustedScore = direction === 'inverse' ? (1 / Math.max(numScore, 0.001)) : numScore
           const normalizedWeight = weights[col] / sumWeights
-          weightedSum += normalizedWeight * numScore
+          weightedSum += normalizedWeight * adjustedScore
         }
       }
     })
@@ -424,6 +453,12 @@ function RankingPage() {
       window.removeEventListener('project-row-deleted', handleProjectRowDeleted)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
+      
+      // Clear all debounce timers on unmount
+      Object.values(debounceTimersRef.current).forEach(timer => {
+        if (timer) clearTimeout(timer)
+      })
+      debounceTimersRef.current = {}
     }
   }, [])
 
@@ -539,6 +574,12 @@ function RankingPage() {
           setCriteriaWeights({})
         }
         
+        if (data.criteriaDirections) {
+          setCriteriaDirections(data.criteriaDirections)
+        } else {
+          setCriteriaDirections({})
+        }
+        
         if (hasAlternatives) {
           // Merge saved alternatives scores with project structure
           isSyncingRef.current = true
@@ -612,6 +653,25 @@ function RankingPage() {
         } else {
           setRankingResult(null)
         }
+        
+        // Load risk assessment & optimization fields
+        if (data.severityValues) {
+          setSeverityValues(data.severityValues)
+        } else {
+          setSeverityValues({})
+        }
+        
+        if (data.recommendations) {
+          setRecommendations(data.recommendations)
+        } else {
+          setRecommendations({})
+        }
+        
+        if (data.optimumWeights) {
+          setOptimumWeights(data.optimumWeights)
+        } else {
+          setOptimumWeights({})
+        }
       } else {
         // If response is not successful, clear data and sync with project structure
         setCriteriaWeights({})
@@ -675,7 +735,7 @@ function RankingPage() {
     try {
       const columnsToSave = newColumns !== null ? newColumns : rankingColumns
       const groupsToSave = newGroups !== null ? newGroups : columnGroups
-      await rankingAPI.update(newCriteriaWeights, newAlternativesScores, newRankingResult, columnsToSave, groupsToSave)
+      await rankingAPI.update(newCriteriaWeights, newAlternativesScores, newRankingResult, columnsToSave, groupsToSave, severityValues, recommendations, optimumWeights, criteriaDirections)
       // Emit event to notify FilePage
       window.dispatchEvent(new CustomEvent('ranking-updated'))
     } catch (error) {
@@ -690,9 +750,25 @@ function RankingPage() {
       [column]: weightValue
     }
     setCriteriaWeights(newWeights)
-    // Auto-save only the changed cell
-    rankingAPI.updateCell('weight', '', column, weightValue).catch(error => {
-      console.error('Error updating weight:', error)
+    // Debounced save to API
+    debounceSave(`weight_${column}`, () => {
+      rankingAPI.updateCell('weight', '', column, weightValue).catch(error => {
+        console.error('Error updating weight:', error)
+      })
+    })
+  }
+
+  const handleDirectionChange = (column, direction) => {
+    const newDirections = {
+      ...criteriaDirections,
+      [column]: direction
+    }
+    setCriteriaDirections(newDirections)
+    // Debounced save to API
+    debounceSave(`direction_${column}`, () => {
+      rankingAPI.updateCell('direction', '', column, direction).catch(error => {
+        console.error('Error updating direction:', error)
+      })
     })
   }
 
@@ -713,10 +789,93 @@ function RankingPage() {
       setComputedResults({})
     }
     
-    // Auto-save only the changed cell
-    rankingAPI.updateCell('score', alternative, column, scoreValue).catch(error => {
-      console.error('Error updating score:', error)
+    // Debounced save to API
+    debounceSave(`score_${alternative}_${column}`, () => {
+      rankingAPI.updateCell('score', alternative, column, scoreValue).catch(error => {
+        console.error('Error updating score:', error)
+      })
     })
+  }
+
+  const handleSeverityChange = (alternative, severity) => {
+    const severityValue = severity === '' ? '' : (parseFloat(severity) || 0)
+    setSeverityValues(prev => ({
+      ...prev,
+      [alternative]: severityValue
+    }))
+    // Debounced save to API
+    debounceSave(`severity_${alternative}`, () => {
+      rankingAPI.updateCell('severity', alternative, '', severityValue).catch(error => {
+        console.error('Error updating severity:', error)
+      })
+    })
+  }
+
+  const handleRecommendationChange = (alternative, recommendation) => {
+    // Only update state, don't save to API yet
+    setRecommendations(prev => ({
+      ...prev,
+      [alternative]: recommendation
+    }))
+  }
+
+  const handleRecommendationBlur = (alternative, recommendation) => {
+    // Save to API only when user leaves the field
+    rankingAPI.updateCell('recommendation', alternative, '', recommendation).catch(error => {
+      console.error('Error updating recommendation:', error)
+    })
+  }
+
+  const handleOptimumWeightChange = (alternative, optimumWeight) => {
+    const weightValue = optimumWeight === '' ? '' : (parseFloat(optimumWeight) || 0)
+    setOptimumWeights(prev => ({
+      ...prev,
+      [alternative]: weightValue
+    }))
+    // Debounced save to API
+    debounceSave(`optimum_weight_${alternative}`, () => {
+      rankingAPI.updateCell('optimum_weight', alternative, '', weightValue).catch(error => {
+        console.error('Error updating optimum weight:', error)
+      })
+    })
+  }
+
+  // Calculate risk ranking and category for an alternative
+  const calculateRiskData = (alternative) => {
+    const computedValues = showComputedResults ? computedResults[alternative] || {} : {}
+    const currentProbability = computedValues['a·V·F(t)'] || 0
+    
+    // Weight of Probability: Use optimum weight if available, otherwise use current probability
+    const weightOfProbability = optimumWeights[alternative] !== undefined && optimumWeights[alternative] !== '' 
+      ? parseFloat(optimumWeights[alternative]) 
+      : currentProbability
+    
+    // Severity of Consequence: Use severity value
+    const severityOfConsequence = severityValues[alternative] !== undefined && severityValues[alternative] !== ''
+      ? parseFloat(severityValues[alternative])
+      : 0
+    
+    // Risk Ranking = Weight of Probability × Severity of Consequence
+    const riskRanking = weightOfProbability * severityOfConsequence
+    
+    // Risk Category based on risk ranking
+    let riskCategory = 'Low'
+    let riskColor = 'bg-green-100 text-green-800'
+    if (riskRanking > 15) {
+      riskCategory = 'High'
+      riskColor = 'bg-red-100 text-red-800'
+    } else if (riskRanking >= 5) {
+      riskCategory = 'Medium'
+      riskColor = 'bg-yellow-100 text-yellow-800'
+    }
+    
+    return {
+      weightOfProbability,
+      severityOfConsequence,
+      riskRanking,
+      riskCategory,
+      riskColor
+    }
   }
   
   const handleCalculateComputedResults = () => {
@@ -1106,14 +1265,25 @@ function RankingPage() {
                           ×
                         </button>
                       </div>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={criteriaWeights[col] || ''}
-                        onChange={(e) => handleWeightChange(col, e.target.value)}
-                        className="w-auto max-w-[120px] px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Weight"
-                      />
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={criteriaWeights[col] || ''}
+                          onChange={(e) => handleWeightChange(col, e.target.value)}
+                          className="w-auto max-w-[100px] px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Weight"
+                        />
+                        <select
+                          value={criteriaDirections[col] || 'direct'}
+                          onChange={(e) => handleDirectionChange(col, e.target.value)}
+                          className="px-2 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          title="Impact direction: Direct (higher = higher risk) or Inverse (higher = lower risk)"
+                        >
+                          <option value="direct">Direct</option>
+                          <option value="inverse">Inverse</option>
+                        </select>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1136,14 +1306,25 @@ function RankingPage() {
                       ×
                     </button>
                   </div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={criteriaWeights[col] || ''}
-                    onChange={(e) => handleWeightChange(col, e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Weight"
-                  />
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={criteriaWeights[col] || ''}
+                      onChange={(e) => handleWeightChange(col, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Weight"
+                    />
+                    <select
+                      value={criteriaDirections[col] || 'direct'}
+                      onChange={(e) => handleDirectionChange(col, e.target.value)}
+                      className="px-2 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      title="Impact direction: Direct (higher = higher risk) or Inverse (higher = lower risk)"
+                    >
+                      <option value="direct">Direct</option>
+                      <option value="inverse">Inverse</option>
+                    </select>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1241,6 +1422,8 @@ function RankingPage() {
                   totalCols += 1
                 }
               })
+              // Add Severity column (1) + Optimization section columns (6: Recommendation, Optimum Weight, Weight of Prob, Severity, Risk Ranking, Risk Category)
+              totalCols += 7
               
               // Calculate column spans for phase headers
               let devCols = 0
@@ -1358,12 +1541,26 @@ function RankingPage() {
                       )}
                       {finalComputedCols > 0 && (
                         <th 
-                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
+                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
                           colSpan={finalComputedCols}
                         >
                           Weights of Factors Leading to the Occurrence of the Main Cause of Deviation
                         </th>
                       )}
+                      {/* Severity column */}
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
+                        rowSpan={3}
+                      >
+                        Severity of Consequence
+                      </th>
+                      {/* Optimization section */}
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
+                        colSpan={6}
+                      >
+                        Risk Assessment & Optimization
+                      </th>
                     </tr>
                     
                     {/* Row 4: Group Headers */}
@@ -1439,6 +1636,19 @@ function RankingPage() {
                           }
                           return null
                         })}
+                      {/* Optimization section group headers */}
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
+                        colSpan={2}
+                      >
+                        Optimization Inputs
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
+                        colSpan={4}
+                      >
+                        After Optimization
+                      </th>
                     </tr>
                     
                     {/* Row 5: Leaf Criteria and Computed Column Headers */}
@@ -1505,6 +1715,38 @@ function RankingPage() {
                           )
                         }
                       })}
+                      {/* Severity column header (already has rowSpan=3, so empty in this row) */}
+                      {/* Optimization section individual column headers */}
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]"
+                      >
+                        Optimization Recommendation
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                      >
+                        Optimum Weight Factor
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                      >
+                        Weight of Probability
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                      >
+                        Severity of Consequence
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[100px]"
+                      >
+                        Risk Ranking
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px]"
+                      >
+                        Risk Category
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1593,6 +1835,69 @@ function RankingPage() {
                                )
                              }
                            })}
+                           
+                           {/* Severity column */}
+                           <td className="px-3 py-3 border-b border-r w-[120px]">
+                             <input
+                               type="number"
+                               step="0.1"
+                               min="1"
+                               max="10"
+                               value={severityValues[alt] || ''}
+                               onChange={(e) => handleSeverityChange(alt, e.target.value)}
+                               className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="1-10"
+                             />
+                           </td>
+                           
+                           {/* Optimization section cells */}
+                           <td className="px-3 py-3 border-b border-r w-[150px]">
+                             <textarea
+                               value={recommendations[alt] || ''}
+                               onChange={(e) => handleRecommendationChange(alt, e.target.value)}
+                               onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
+                               className="w-full min-w-[120px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                               placeholder="Enter recommendation..."
+                               rows={2}
+                             />
+                           </td>
+                           <td className="px-3 py-3 border-b border-r w-[120px]">
+                             <input
+                               type="number"
+                               step="0.1"
+                               value={optimumWeights[alt] || ''}
+                               onChange={(e) => handleOptimumWeightChange(alt, e.target.value)}
+                               className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="New probability"
+                             />
+                           </td>
+                           {(() => {
+                             const riskData = calculateRiskData(alt)
+                             return (
+                               <>
+                                 <td className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[120px]">
+                                   {riskData.weightOfProbability !== undefined && riskData.weightOfProbability !== null
+                                     ? riskData.weightOfProbability.toFixed(3)
+                                     : '-'}
+                                 </td>
+                                 <td className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[120px]">
+                                   {riskData.severityOfConsequence !== undefined && riskData.severityOfConsequence !== null
+                                     ? riskData.severityOfConsequence.toFixed(1)
+                                     : '-'}
+                                 </td>
+                                 <td className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[100px]">
+                                   {riskData.riskRanking !== undefined && riskData.riskRanking !== null
+                                     ? riskData.riskRanking.toFixed(2)
+                                     : '-'}
+                                 </td>
+                                 <td className="px-3 py-3 border-b bg-gray-50 text-center w-[120px]">
+                                   <span className={`px-2 py-1 rounded text-xs font-semibold ${riskData.riskColor}`}>
+                                     {riskData.riskCategory}
+                                   </span>
+                                 </td>
+                               </>
+                             )
+                           })()}
                          </tr>
                        )
                      })}
