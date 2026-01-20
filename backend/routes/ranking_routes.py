@@ -310,12 +310,27 @@ def get_ranking():
                 if 'RankingResult' in xls.sheet_names:
                     df_result = pd.read_excel(filepath, sheet_name='RankingResult')
                     ranking_result = {
-                        'ranking': [
-                            {'alternative': str(row['alternative']), 'score': float(row['score'])}
-                            for _, row in df_result.iterrows()
-                            if 'alternative' in row and 'score' in row and pd.notna(row['alternative']) and pd.notna(row['score'])
-                        ]
+                        'ranking': []
                     }
+                    for _, row in df_result.iterrows():
+                        if 'alternative' in row and 'score' in row and pd.notna(row['alternative']) and pd.notna(row['score']):
+                            item = {
+                                'alternative': str(row['alternative']),
+                                'score': float(row['score'])
+                            }
+                            # Load Final Risk Score if available (check multiple possible column names)
+                            final_risk_score_col = None
+                            for col in df_result.columns:
+                                col_lower = str(col).lower().replace(' ', '').replace('_', '')
+                                if col_lower in ['finalriskscore', 'final_risk_score', 'finalriskscore']:
+                                    final_risk_score_col = col
+                                    break
+                            if final_risk_score_col and final_risk_score_col in row and pd.notna(row[final_risk_score_col]):
+                                try:
+                                    item['finalRiskScore'] = float(row[final_risk_score_col])
+                                except (ValueError, TypeError):
+                                    pass
+                            ranking_result['ranking'].append(item)
                     if not ranking_result['ranking']:
                         ranking_result = None
                 
@@ -535,15 +550,26 @@ def update_ranking_cell():
                 # Ranking result (preserve if exists)
                 if 'RankingResult' in xls.sheet_names:
                     df_result = pd.read_excel(filepath, sheet_name='RankingResult')
-                    tmp_ranking = [
-                        {
-                            'alternative': str(row['alternative']),
-                            'score': float(row['score'])
-                        }
-                        for _, row in df_result.iterrows()
-                        if 'alternative' in row and 'score' in row
-                        and pd.notna(row['alternative']) and pd.notna(row['score'])
-                    ]
+                    tmp_ranking = []
+                    for _, row in df_result.iterrows():
+                        if 'alternative' in row and 'score' in row and pd.notna(row['alternative']) and pd.notna(row['score']):
+                            item = {
+                                'alternative': str(row['alternative']),
+                                'score': float(row['score'])
+                            }
+                            # Load Final Risk Score if available (check multiple possible column names)
+                            final_risk_score_col = None
+                            for col in df_result.columns:
+                                col_lower = str(col).lower().replace(' ', '').replace('_', '')
+                                if col_lower in ['finalriskscore', 'final_risk_score', 'finalriskscore']:
+                                    final_risk_score_col = col
+                                    break
+                            if final_risk_score_col and final_risk_score_col in row and pd.notna(row[final_risk_score_col]):
+                                try:
+                                    item['finalRiskScore'] = float(row[final_risk_score_col])
+                                except (ValueError, TypeError):
+                                    pass
+                            tmp_ranking.append(item)
                     if tmp_ranking:
                         ranking_result = {'ranking': tmp_ranking}
 
@@ -1325,7 +1351,18 @@ def update_ranking():
             
             # Sheet 4: Ranking Result
             if ranking_result and ranking_result.get('ranking'):
-                df_result = pd.DataFrame(ranking_result['ranking'])
+                # Ensure all items have finalRiskScore field
+                ranking_data = []
+                for item in ranking_result['ranking']:
+                    row_data = {
+                        'alternative': item.get('alternative', ''),
+                        'score': item.get('score', 0)
+                    }
+                    # Include finalRiskScore if available
+                    if 'finalRiskScore' in item and item['finalRiskScore'] is not None:
+                        row_data['finalRiskScore'] = item['finalRiskScore']
+                    ranking_data.append(row_data)
+                df_result = pd.DataFrame(ranking_data)
                 df_result.to_excel(writer, sheet_name='RankingResult', index=False)
             
             # Sheet 5: Risk Assessment & Optimization

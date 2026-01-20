@@ -28,6 +28,10 @@ function RankingPage() {
   const [recommendations, setRecommendations] = useState({}) // {alternative: recommendation}
   const [optimumWeights, setOptimumWeights] = useState({}) // {alternative: optimumWeight}
   
+  // Sorting state for Ranking Results table
+  const [sortColumn, setSortColumn] = useState(null) // 'score' or 'finalRiskScore'
+  const [sortDirection, setSortDirection] = useState('asc') // 'asc' or 'desc'
+  
   // Ref to track if we're syncing (to avoid auto-save during sync)
   const isSyncingRef = useRef(false)
   
@@ -1141,6 +1145,24 @@ function RankingPage() {
       const response = await rankingAPI.ahp(criteriaWeights, alternativesScores)
       if (response.data.success) {
         const result = response.data.data
+        // Calculate Final Risk Score for each alternative
+        if (result && result.ranking) {
+          result.ranking = result.ranking.map(item => {
+            const alternative = item.alternative
+            // Calculate Final Risk Score = Severity × Optimum Factor
+            const severity = severityValues[alternative] !== undefined && severityValues[alternative] !== '' 
+              ? parseFloat(severityValues[alternative]) 
+              : 0
+            const optimumFactor = optimumWeights[alternative] !== undefined && optimumWeights[alternative] !== '' 
+              ? parseFloat(optimumWeights[alternative]) 
+              : 0
+            const finalRiskScore = severity * optimumFactor
+            return {
+              ...item,
+              finalRiskScore: finalRiskScore
+            }
+          })
+        }
         setRankingResult(result)
         setMessage({ type: 'success', text: 'Ranking calculated successfully' })
         // Auto-save including ranking result
@@ -1163,6 +1185,17 @@ function RankingPage() {
     await updateRanking(criteriaWeights, alternativesScores, null)
     setMessage({ type: 'success', text: 'Ranking results reset successfully' })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+  }
+
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      // Toggle direction if same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // New column, default to ascending
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
   }
 
   if (initialLoading) {
@@ -2113,17 +2146,60 @@ function RankingPage() {
                   <tr className="bg-gray-100">
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Rank</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Alternative</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Score</th>
+                    <th 
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase cursor-pointer hover:bg-gray-200"
+                      onClick={() => handleSort('score')}
+                    >
+                      AHP Score
+                      {sortColumn === 'score' && (
+                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </th>
+                    <th 
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase cursor-pointer hover:bg-gray-200"
+                      onClick={() => handleSort('finalRiskScore')}
+                    >
+                      Final Risk Score
+                      {sortColumn === 'finalRiskScore' && (
+                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rankingResult.ranking.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 border-b font-bold">{index + 1}</td>
-                      <td className="px-4 py-3 border-b">{item.alternative}</td>
-                      <td className="px-4 py-3 border-b">{item.score.toFixed(4)}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    // Sort ranking result if sortColumn is set
+                    let sortedRanking = [...(rankingResult.ranking || [])]
+                    if (sortColumn) {
+                      sortedRanking.sort((a, b) => {
+                        let aValue, bValue
+                        if (sortColumn === 'score') {
+                          aValue = a.score || 0
+                          bValue = b.score || 0
+                        } else if (sortColumn === 'finalRiskScore') {
+                          aValue = a.finalRiskScore !== undefined && a.finalRiskScore !== null ? a.finalRiskScore : 0
+                          bValue = b.finalRiskScore !== undefined && b.finalRiskScore !== null ? b.finalRiskScore : 0
+                        }
+                        if (sortDirection === 'asc') {
+                          return aValue - bValue
+                        } else {
+                          return bValue - aValue
+                        }
+                      })
+                    }
+                    return sortedRanking.map((item, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 border-b font-bold">{index + 1}</td>
+                        <td className="px-4 py-3 border-b">{item.alternative}</td>
+                        <td className="px-4 py-3 border-b">{item.score.toFixed(4)}</td>
+                        <td className="px-4 py-3 border-b">
+                          {item.finalRiskScore !== undefined && item.finalRiskScore !== null
+                            ? item.finalRiskScore.toFixed(2)
+                            : '0.00'}
+                        </td>
+                      </tr>
+                    ))
+                  })()}
                 </tbody>
               </table>
             </div>
