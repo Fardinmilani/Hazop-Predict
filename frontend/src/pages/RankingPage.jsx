@@ -842,37 +842,34 @@ function RankingPage() {
 
   // Calculate risk ranking and category for an alternative
   const calculateRiskData = (alternative) => {
-    const computedValues = showComputedResults ? computedResults[alternative] || {} : {}
-    const currentProbability = computedValues['a·V·F(t)'] || 0
-    
-    // Weight of Probability: Use optimum weight if available, otherwise use current probability
-    const weightOfProbability = optimumWeights[alternative] !== undefined && optimumWeights[alternative] !== '' 
-      ? parseFloat(optimumWeights[alternative]) 
-      : currentProbability
-    
-    // Severity of Consequence: Use severity value
-    const severityOfConsequence = severityValues[alternative] !== undefined && severityValues[alternative] !== ''
+    // Severity (S): Use severity value
+    const severity = severityValues[alternative] !== undefined && severityValues[alternative] !== ''
       ? parseFloat(severityValues[alternative])
       : 0
     
-    // Risk Ranking = Weight of Probability × Severity of Consequence
-    const riskRanking = weightOfProbability * severityOfConsequence
+    // Optimum Factor (P): Use optimum weight if available, otherwise default to 0
+    const optimumFactor = optimumWeights[alternative] !== undefined && optimumWeights[alternative] !== '' 
+      ? parseFloat(optimumWeights[alternative]) 
+      : 0
     
-    // Risk Category based on risk ranking
+    // Final Risk Score = Severity × Factor
+    const finalRiskScore = severity * optimumFactor
+    
+    // Risk Category based on final risk score
     let riskCategory = 'Low'
     let riskColor = 'bg-green-100 text-green-800'
-    if (riskRanking > 15) {
+    if (finalRiskScore > 15) {
       riskCategory = 'High'
       riskColor = 'bg-red-100 text-red-800'
-    } else if (riskRanking >= 5) {
+    } else if (finalRiskScore >= 5) {
       riskCategory = 'Medium'
       riskColor = 'bg-yellow-100 text-yellow-800'
     }
     
     return {
-      weightOfProbability,
-      severityOfConsequence,
-      riskRanking,
+      severity,
+      optimumFactor,
+      finalRiskScore,
       riskCategory,
       riskColor
     }
@@ -1422,8 +1419,8 @@ function RankingPage() {
                   totalCols += 1
                 }
               })
-              // Add Severity column (1) + Optimization section columns (6: Recommendation, Optimum Weight, Weight of Prob, Severity, Risk Ranking, Risk Category)
-              totalCols += 7
+              // Add Risk Assessment & Optimization section columns (5: Severity, Recommendation, Optimum Factor, Final Risk Score, Risk Category)
+              totalCols += 5
               
               // Calculate column spans for phase headers
               let devCols = 0
@@ -1525,12 +1522,20 @@ function RankingPage() {
                       )}
                       {(opCols + opComputedCols) > 0 && (
                         <th 
-                          className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${otherCols > 0 || finalComputedCols > 0 ? 'border-r border-gray-300' : ''}`}
+                          className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
                           colSpan={opCols + opComputedCols}
                         >
                           Factors Related to Equipment Operation Phase (Variables: V)
                         </th>
                       )}
+                      {/* Risk Assessment & Optimization section - Master Group Header spanning 5 columns */}
+                      {/* Total width of 5 columns: 120 + 150 + 120 + 100 + 120 = 610px */}
+                      <th 
+                        className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${otherCols > 0 || finalComputedCols > 0 ? 'border-r border-gray-300' : ''}`}
+                        colSpan={5}
+                      >
+                        Risk Assessment & Optimization
+                      </th>
                       {otherCols > 0 && (
                         <th 
                           className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${finalComputedCols > 0 ? 'border-r border-gray-300' : ''}`}
@@ -1547,20 +1552,6 @@ function RankingPage() {
                           Weights of Factors Leading to the Occurrence of the Main Cause of Deviation
                         </th>
                       )}
-                      {/* Severity column */}
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
-                        rowSpan={3}
-                      >
-                        Severity of Consequence
-                      </th>
-                      {/* Optimization section */}
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
-                        colSpan={6}
-                      >
-                        Risk Assessment & Optimization
-                      </th>
                     </tr>
                     
                     {/* Row 4: Group Headers */}
@@ -1599,56 +1590,78 @@ function RankingPage() {
                             
                             const colSpan = group.columns.length + computedAfterCount
                             
+                            // Check if we should insert Risk Assessment empty header after this group
+                            const shouldInsertRiskAssessmentAfterGroup = isLastOpGroup && !hasPhaseLevelComputedAfter && operation.length > 0
+                            
                             return (
-                              <th 
-                                key={group.name}
-                                className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
-                                  hasRightBorder ? 'border-r border-gray-300' : ''
-                                }`}
-                                colSpan={colSpan}
-                              >
-                                <div className="flex items-center justify-center gap-2">
-                                  <span>{group.name}</span>
-                                  <button
-                                    onClick={() => handleDeleteGroup(group.name)}
-                                    className="text-red-500 hover:text-red-700 text-xs font-normal px-1 py-0.5 rounded hover:bg-red-50 transition-colors"
-                                    title="Delete group"
+                              <>
+                                <th 
+                                  key={group.name}
+                                  className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                                    shouldInsertRiskAssessmentAfterGroup ? 'border-r border-gray-300' : (hasRightBorder ? 'border-r border-gray-300' : '')
+                                  }`}
+                                  colSpan={colSpan}
+                                >
+                                  <div className="flex items-center justify-center gap-2">
+                                    <span>{group.name}</span>
+                                    <button
+                                      onClick={() => handleDeleteGroup(group.name)}
+                                      className="text-red-500 hover:text-red-700 text-xs font-normal px-1 py-0.5 rounded hover:bg-red-50 transition-colors"
+                                      title="Delete group"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                </th>
+                                {shouldInsertRiskAssessmentAfterGroup && (
+                                  <th 
+                                    key="risk_assessment_empty_header"
+                                    className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                                      nextItem ? 'border-r border-gray-300' : ''
+                                    }`}
+                                    colSpan={5}
                                   >
-                                    ×
-                                  </button>
-                                </div>
-                              </th>
+                                    {/* Empty - Risk Assessment doesn't have a group header */}
+                                  </th>
+                                )}
+                              </>
                             )
                           } else if (item.type === 'computed') {
                             // Phase-level computed columns (a, V) and standalone (a·V·F(t)) get empty headers in Row 4
                             const isLastItem = itemIndex === filteredArray.length - 1
+                            const isVComputed = item.name === 'V'
+                            const nextItem = itemIndex < filteredArray.length - 1 ? filteredArray[itemIndex + 1] : null
+                            
+                            // After 'V' computed column, insert empty header for Risk Assessment
+                            const shouldInsertRiskAssessment = isVComputed && operation.length > 0
+                            
                             return (
-                              <th 
-                                key={`computed_header_${item.name}`}
-                                className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
-                                  !isLastItem ? 'border-r border-gray-300' : ''
-                                }`}
-                                colSpan={1}
-                              >
-                                {/* Empty for group header row - computed columns don't have group headers */}
-                              </th>
+                              <>
+                                <th 
+                                  key={`computed_header_${item.name}`}
+                                  className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                                    shouldInsertRiskAssessment ? 'border-r border-gray-300' : (!isLastItem ? 'border-r border-gray-300' : '')
+                                  }`}
+                                  colSpan={1}
+                                >
+                                  {/* Empty for group header row - computed columns don't have group headers */}
+                                </th>
+                                {shouldInsertRiskAssessment && (
+                                  <th 
+                                    key="risk_assessment_empty_header"
+                                    className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${
+                                      nextItem ? 'border-r border-gray-300' : ''
+                                    }`}
+                                    colSpan={5}
+                                  >
+                                    {/* Empty - Risk Assessment doesn't have a group header */}
+                                  </th>
+                                )}
+                              </>
                             )
                           }
                           return null
                         })}
-                      {/* Optimization section group headers */}
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300"
-                        colSpan={2}
-                      >
-                        Optimization Inputs
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase"
-                        colSpan={4}
-                      >
-                        After Optimization
-                      </th>
                     </tr>
                     
                     {/* Row 5: Leaf Criteria and Computed Column Headers */}
@@ -1659,6 +1672,7 @@ function RankingPage() {
                           const token = extractGroupToken(group.name)
                           const isLastDevGroup = development.indexOf(group) === development.length - 1
                           const isLastOpGroup = operation.indexOf(group) === operation.length - 1
+                          const isOpGroup = operation.includes(group)
                           
                           // Check if next item is a computed column that should be rendered after this group
                           // Note: 'a' comes after all development groups, 'V' comes after all operation groups
@@ -1677,76 +1691,140 @@ function RankingPage() {
                             (isLastDevGroup && nextItem.name === 'a') ||
                             (isLastOpGroup && nextItem.name === 'V')
                           )
+                          // Check if this is the last operation group and next is not operation-related (so Risk Assessment comes after)
+                          // Also true if this is the last operation group and there's no next item (end of operation phase)
+                          const isAfterOpPhase = isLastOpGroup && (
+                            !nextItem || // End of all items
+                            (nextItem.type === 'group' && !operation.includes(nextItem.group)) || // Next is non-operation group
+                            (nextItem.type === 'computed' && nextItem.name !== 'V') // Next is computed but not 'V'
+                          )
                           
-                          return group.columns.map((col, colIndex) => {
-                            const isLastInGroup = colIndex === group.columns.length - 1
-                            // For phase-level computed columns (a, V), they come after all groups in their phase
-                            // So we don't add border after the last column of the last group in each phase
-                            const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1 && !hasComputedAfter && !hasPhaseLevelComputedAfter
-                            // Only add border if:
-                            // 1. Not the last column in group, OR
-                            // 2. Has group-level computed column after (D, P, C, O, M, F(t)), OR
-                            // 3. Not the last item overall
-                            // Note: We don't add border for phase-level computed columns (a, V) because they're rendered separately
-                            const hasRightBorder = !isLastInGroup || hasComputedAfter || (!hasPhaseLevelComputedAfter && !isLastItem)
-                            return (
-                              <th 
-                                key={`${group.name}__${col}`}
-                                className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
-                                  hasRightBorder ? 'border-r border-gray-300' : ''
-                                }`}
-                              >
-                                {displayCriteriaLabel(col)}
-                              </th>
-                            )
-                          })
+                          // Check if we should insert Risk Assessment after this group (last operation group, no 'V' after)
+                          const shouldInsertRiskAssessmentAfterGroup = isLastOpGroup && !hasPhaseLevelComputedAfter && isAfterOpPhase
+                          
+                          return (
+                            <>
+                              {group.columns.map((col, colIndex) => {
+                                const isLastInGroup = colIndex === group.columns.length - 1
+                                // For phase-level computed columns (a, V), they come after all groups in their phase
+                                // So we don't add border after the last column of the last group in each phase
+                                const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1 && !hasComputedAfter && !hasPhaseLevelComputedAfter
+                                // Only add border if:
+                                // 1. Not the last column in group, OR
+                                // 2. Has group-level computed column after (D, P, C, O, M, F(t)), OR
+                                // 3. Is after operation phase (Risk Assessment comes next), OR
+                                // 4. Not the last item overall
+                                // Note: We don't add border for phase-level computed columns (a, V) because they're rendered separately
+                                const hasRightBorder = !isLastInGroup || hasComputedAfter || isAfterOpPhase || (!hasPhaseLevelComputedAfter && !isLastItem)
+                                return (
+                                  <th 
+                                    key={`${group.name}__${col}`}
+                                    className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px] ${
+                                      hasRightBorder ? 'border-r border-gray-300' : ''
+                                    }`}
+                                  >
+                                    {displayCriteriaLabel(col)}
+                                  </th>
+                                )
+                              })}
+                              {shouldInsertRiskAssessmentAfterGroup && (
+                                <>
+                                  {/* Risk Assessment & Optimization section individual column headers - 5 columns */}
+                                  {/* Column widths: Col1=120px, Col2=150px, Col3=120px, Col4=100px, Col5=120px */}
+                                  {/* Col 1: Severity (S) */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                                  >
+                                    Severity (S)
+                                  </th>
+                                  {/* Col 2: Recommendation */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]"
+                                  >
+                                    Recommendation
+                                  </th>
+                                  {/* Col 3: Optimum Factor (P) */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                                  >
+                                    Optimum Factor (P)
+                                  </th>
+                                  {/* Col 4: Final Risk Score */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[100px]"
+                                  >
+                                    Final Risk Score
+                                  </th>
+                                  {/* Col 5: Risk Category */}
+                                  <th 
+                                    className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${nextItem ? 'border-r border-gray-300' : ''} w-[120px]`}
+                                  >
+                                    Risk Category
+                                  </th>
+                                </>
+                              )}
+                            </>
+                          )
                         } else {
                           // Computed column header - render it here since it's already in orderedGroupsWithComputed
                           const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1
+                          const isVComputed = item.name === 'V'
+                          const nextItem = itemIndex < orderedGroupsWithComputed.length - 1 ? orderedGroupsWithComputed[itemIndex + 1] : null
+                          const isAfterOpPhase = isVComputed && nextItem && nextItem.type === 'group' && !operation.includes(nextItem.group)
+                          
+                          // After 'V' computed column, insert Risk Assessment headers
+                          const shouldInsertRiskAssessment = isVComputed
+                          
                           return (
-                            <th 
-                              key={`computed_${item.name}`}
-                              className={`px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase bg-gray-50 w-[100px] ${
-                                !isLastItem ? 'border-r border-gray-300' : ''
-                              }`}
-                            >
-                              {item.name}
-                            </th>
+                            <>
+                              <th 
+                                key={`computed_${item.name}`}
+                                className={`px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase bg-gray-50 w-[100px] ${
+                                  shouldInsertRiskAssessment ? 'border-r border-gray-300' : (!isLastItem ? 'border-r border-gray-300' : '')
+                                }`}
+                              >
+                                {item.name}
+                              </th>
+                              {shouldInsertRiskAssessment && (
+                                <>
+                                  {/* Risk Assessment & Optimization section individual column headers - 5 columns */}
+                                  {/* Column widths: Col1=120px, Col2=150px, Col3=120px, Col4=100px, Col5=120px */}
+                                  {/* Col 1: Severity (S) */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                                  >
+                                    Severity (S)
+                                  </th>
+                                  {/* Col 2: Recommendation */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]"
+                                  >
+                                    Recommendation
+                                  </th>
+                                  {/* Col 3: Optimum Factor (P) */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                                  >
+                                    Optimum Factor (P)
+                                  </th>
+                                  {/* Col 4: Final Risk Score */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[100px]"
+                                  >
+                                    Final Risk Score
+                                  </th>
+                                  {/* Col 5: Risk Category */}
+                                  <th 
+                                    className={`px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase ${nextItem ? 'border-r border-gray-300' : ''} w-[120px]`}
+                                  >
+                                    Risk Category
+                                  </th>
+                                </>
+                              )}
+                            </>
                           )
                         }
                       })}
-                      {/* Severity column header (already has rowSpan=3, so empty in this row) */}
-                      {/* Optimization section individual column headers */}
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]"
-                      >
-                        Optimization Recommendation
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
-                      >
-                        Optimum Weight Factor
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
-                      >
-                        Weight of Probability
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
-                      >
-                        Severity of Consequence
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[100px]"
-                      >
-                        Risk Ranking
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase w-[120px]"
-                      >
-                        Risk Category
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1788,116 +1866,205 @@ function RankingPage() {
                                  (isLastDevGroup && nextItem.name === 'a') ||
                                  (isLastOpGroup && nextItem.name === 'V')
                                )
+                               // Check if this is the last operation group and next is not operation-related (so Risk Assessment comes after)
+                               // Also true if this is the last operation group and there's no next item (end of operation phase)
+                               const isAfterOpPhase = isLastOpGroup && (
+                                 !nextItem || // End of all items
+                                 (nextItem.type === 'group' && !operation.includes(nextItem.group)) || // Next is non-operation group
+                                 (nextItem.type === 'computed' && nextItem.name !== 'V') // Next is computed but not 'V'
+                               )
+                               // Check if we should insert Risk Assessment after this group (last operation group, no 'V' after)
+                               const shouldInsertRiskAssessmentAfterGroup = isLastOpGroup && !hasPhaseLevelComputedAfter && isAfterOpPhase
                                
-                               return group.columns.map((col, colIndex) => {
-                                 const isLastInGroup = colIndex === group.columns.length - 1
-                                 // For phase-level computed columns (a, V), they come after all groups in their phase
-                                 // So we don't add border after the last column of the last group in each phase
-                                 const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1 && !hasComputedAfter && !hasPhaseLevelComputedAfter
-                                 // Only add border if:
-                                 // 1. Not the last column in group, OR
-                                 // 2. Has group-level computed column after (D, P, C, O, M, F(t)), OR
-                                 // 3. Not the last item overall
-                                 // Note: We don't add border for phase-level computed columns (a, V) because they're rendered separately
-                                 const hasRightBorder = !isLastInGroup || hasComputedAfter || (!hasPhaseLevelComputedAfter && !isLastItem)
-                                 return (
-                                   <td 
-                                     key={`${group.name}__${col}`}
-                                     className={`px-3 py-3 border-b w-[120px] ${
-                                       hasRightBorder ? 'border-r border-gray-300' : ''
-                                     }`}
-                                   >
-                                     <input
-                                       type="number"
-                                       step="0.1"
-                                       value={alternativesScores[alt][col] || ''}
-                                       onChange={(e) => handleScoreChange(alt, col, e.target.value)}
-                                       className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                     />
-                                   </td>
-                                 )
-                               })
+                               return (
+                                 <>
+                                   {group.columns.map((col, colIndex) => {
+                                     const isLastInGroup = colIndex === group.columns.length - 1
+                                     // For phase-level computed columns (a, V), they come after all groups in their phase
+                                     // So we don't add border after the last column of the last group in each phase
+                                     const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1 && !hasComputedAfter && !hasPhaseLevelComputedAfter
+                                     // Only add border if:
+                                     // 1. Not the last column in group, OR
+                                     // 2. Has group-level computed column after (D, P, C, O, M, F(t)), OR
+                                     // 3. Is after operation phase (Risk Assessment comes next), OR
+                                     // 4. Not the last item overall
+                                     // Note: We don't add border for phase-level computed columns (a, V) because they're rendered separately
+                                     const hasRightBorder = !isLastInGroup || hasComputedAfter || isAfterOpPhase || (!hasPhaseLevelComputedAfter && !isLastItem)
+                                     return (
+                                       <td 
+                                         key={`${group.name}__${col}`}
+                                         className={`px-3 py-3 border-b w-[120px] ${
+                                           hasRightBorder ? 'border-r border-gray-300' : ''
+                                         }`}
+                                       >
+                                         <input
+                                           type="number"
+                                           step="0.1"
+                                           value={alternativesScores[alt][col] || ''}
+                                           onChange={(e) => handleScoreChange(alt, col, e.target.value)}
+                                           className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                         />
+                                       </td>
+                                     )
+                                   })}
+                                   {shouldInsertRiskAssessmentAfterGroup && (() => {
+                                     const riskData = calculateRiskData(alt)
+                                     return (
+                                       <>
+                                         {/* Risk Assessment & Optimization section cells - 5 columns */}
+                                         {/* Col 1: Severity (S) */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[120px]"
+                                         >
+                                           <input
+                                             type="number"
+                                             step="0.1"
+                                             min="1"
+                                             max="10"
+                                             value={severityValues[alt] || ''}
+                                             onChange={(e) => handleSeverityChange(alt, e.target.value)}
+                                             className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             placeholder="1-10"
+                                           />
+                                         </td>
+                                         {/* Col 2: Recommendation */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[150px]"
+                                         >
+                                           <textarea
+                                             value={recommendations[alt] || ''}
+                                             onChange={(e) => handleRecommendationChange(alt, e.target.value)}
+                                             onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
+                                             className="w-full min-w-[120px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                             placeholder="Enter recommendation..."
+                                             rows={2}
+                                           />
+                                         </td>
+                                         {/* Col 3: Optimum Factor (P) */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[120px]"
+                                         >
+                                           <input
+                                             type="number"
+                                             step="0.1"
+                                             value={optimumWeights[alt] || ''}
+                                             onChange={(e) => handleOptimumWeightChange(alt, e.target.value)}
+                                             className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             placeholder="Factor"
+                                           />
+                                         </td>
+                                         {/* Col 4: Final Risk Score */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[100px]"
+                                         >
+                                           {riskData.finalRiskScore !== undefined && riskData.finalRiskScore !== null
+                                             ? riskData.finalRiskScore.toFixed(2)
+                                             : '-'}
+                                         </td>
+                                         {/* Col 5: Risk Category */}
+                                         <td 
+                                           className={`px-3 py-3 border-b ${nextItem ? 'border-r border-gray-300' : ''} bg-gray-50 text-center w-[120px]`}
+                                         >
+                                           <span className={`px-2 py-1 rounded text-xs font-semibold ${riskData.riskColor}`}>
+                                             {riskData.riskCategory}
+                                           </span>
+                                         </td>
+                                       </>
+                                     )
+                                   })()}
+                                 </>
+                               )
                              } else {
                                // Computed column cell - render it here since it's already in orderedGroupsWithComputed
                                const isLastItem = itemIndex === orderedGroupsWithComputed.length - 1
+                               const isVComputed = item.name === 'V'
+                               const nextItem = itemIndex < orderedGroupsWithComputed.length - 1 ? orderedGroupsWithComputed[itemIndex + 1] : null
+                               
+                               // After 'V' computed column, insert Risk Assessment cells
+                               const shouldInsertRiskAssessment = isVComputed
+                               
                                return (
-                                 <td 
-                                   key={`computed_${item.name}_${alt}`}
-                                   className={`px-3 py-3 border-b bg-gray-50 font-semibold text-center w-[100px] ${
-                                     !isLastItem ? 'border-r border-gray-300' : ''
-                                   }`}
-                                 >
-                                   {computedValues[item.name] !== undefined 
-                                     ? computedValues[item.name].toFixed(3)
-                                     : '-'
-                                   }
-                                 </td>
+                                 <>
+                                   <td 
+                                     key={`computed_${item.name}_${alt}`}
+                                     className={`px-3 py-3 border-b bg-gray-50 font-semibold text-center w-[100px] ${
+                                       shouldInsertRiskAssessment ? 'border-r border-gray-300' : (!isLastItem ? 'border-r border-gray-300' : '')
+                                     }`}
+                                   >
+                                     {computedValues[item.name] !== undefined 
+                                       ? computedValues[item.name].toFixed(3)
+                                       : '-'
+                                     }
+                                   </td>
+                                   {shouldInsertRiskAssessment && (() => {
+                                     const riskData = calculateRiskData(alt)
+                                     return (
+                                       <>
+                                         {/* Risk Assessment & Optimization section cells - 5 columns */}
+                                         {/* Col 1: Severity (S) */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[120px]"
+                                         >
+                                           <input
+                                             type="number"
+                                             step="0.1"
+                                             min="1"
+                                             max="10"
+                                             value={severityValues[alt] || ''}
+                                             onChange={(e) => handleSeverityChange(alt, e.target.value)}
+                                             className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             placeholder="1-10"
+                                           />
+                                         </td>
+                                         {/* Col 2: Recommendation */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[150px]"
+                                         >
+                                           <textarea
+                                             value={recommendations[alt] || ''}
+                                             onChange={(e) => handleRecommendationChange(alt, e.target.value)}
+                                             onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
+                                             className="w-full min-w-[120px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                             placeholder="Enter recommendation..."
+                                             rows={2}
+                                           />
+                                         </td>
+                                         {/* Col 3: Optimum Factor (P) */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[120px]"
+                                         >
+                                           <input
+                                             type="number"
+                                             step="0.1"
+                                             value={optimumWeights[alt] || ''}
+                                             onChange={(e) => handleOptimumWeightChange(alt, e.target.value)}
+                                             className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             placeholder="Factor"
+                                           />
+                                         </td>
+                                         {/* Col 4: Final Risk Score */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[100px]"
+                                         >
+                                           {riskData.finalRiskScore !== undefined && riskData.finalRiskScore !== null
+                                             ? riskData.finalRiskScore.toFixed(2)
+                                             : '-'}
+                                         </td>
+                                         {/* Col 5: Risk Category */}
+                                         <td 
+                                           className={`px-3 py-3 border-b ${nextItem ? 'border-r border-gray-300' : ''} bg-gray-50 text-center w-[120px]`}
+                                         >
+                                           <span className={`px-2 py-1 rounded text-xs font-semibold ${riskData.riskColor}`}>
+                                             {riskData.riskCategory}
+                                           </span>
+                                         </td>
+                                       </>
+                                     )
+                                   })()}
+                                 </>
                                )
                              }
                            })}
-                           
-                           {/* Severity column */}
-                           <td className="px-3 py-3 border-b border-r w-[120px]">
-                             <input
-                               type="number"
-                               step="0.1"
-                               min="1"
-                               max="10"
-                               value={severityValues[alt] || ''}
-                               onChange={(e) => handleSeverityChange(alt, e.target.value)}
-                               className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="1-10"
-                             />
-                           </td>
-                           
-                           {/* Optimization section cells */}
-                           <td className="px-3 py-3 border-b border-r w-[150px]">
-                             <textarea
-                               value={recommendations[alt] || ''}
-                               onChange={(e) => handleRecommendationChange(alt, e.target.value)}
-                               onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
-                               className="w-full min-w-[120px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                               placeholder="Enter recommendation..."
-                               rows={2}
-                             />
-                           </td>
-                           <td className="px-3 py-3 border-b border-r w-[120px]">
-                             <input
-                               type="number"
-                               step="0.1"
-                               value={optimumWeights[alt] || ''}
-                               onChange={(e) => handleOptimumWeightChange(alt, e.target.value)}
-                               className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="New probability"
-                             />
-                           </td>
-                           {(() => {
-                             const riskData = calculateRiskData(alt)
-                             return (
-                               <>
-                                 <td className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[120px]">
-                                   {riskData.weightOfProbability !== undefined && riskData.weightOfProbability !== null
-                                     ? riskData.weightOfProbability.toFixed(3)
-                                     : '-'}
-                                 </td>
-                                 <td className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[120px]">
-                                   {riskData.severityOfConsequence !== undefined && riskData.severityOfConsequence !== null
-                                     ? riskData.severityOfConsequence.toFixed(1)
-                                     : '-'}
-                                 </td>
-                                 <td className="px-3 py-3 border-b border-r bg-gray-50 font-semibold text-center w-[100px]">
-                                   {riskData.riskRanking !== undefined && riskData.riskRanking !== null
-                                     ? riskData.riskRanking.toFixed(2)
-                                     : '-'}
-                                 </td>
-                                 <td className="px-3 py-3 border-b bg-gray-50 text-center w-[120px]">
-                                   <span className={`px-2 py-1 rounded text-xs font-semibold ${riskData.riskColor}`}>
-                                     {riskData.riskCategory}
-                                   </span>
-                                 </td>
-                               </>
-                             )
-                           })()}
                          </tr>
                        )
                      })}
