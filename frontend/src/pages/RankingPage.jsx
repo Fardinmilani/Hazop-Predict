@@ -1730,22 +1730,22 @@ function RankingPage() {
                               {shouldInsertRiskAssessmentAfterGroup && (
                                 <>
                                   {/* Risk Assessment & Optimization section individual column headers - 5 columns */}
-                                  {/* Column widths: Col1=120px, Col2=150px, Col3=120px, Col4=100px, Col5=120px */}
-                                  {/* Col 1: Severity (S) */}
+                                  {/* Column widths: Col1=180px (Recommendation), Col2=120px (Severity), Col3=144px (Optimum Factor), Col4=100px, Col5=120px */}
+                                  {/* Col 1: Recommendation */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[180px]"
+                                  >
+                                    Recommendation
+                                  </th>
+                                  {/* Col 2: Severity (S) */}
                                   <th 
                                     className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
                                   >
                                     Severity (S)
                                   </th>
-                                  {/* Col 2: Recommendation */}
-                                  <th 
-                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]"
-                                  >
-                                    Recommendation
-                                  </th>
                                   {/* Col 3: Optimum Factor (P) */}
                                   <th 
-                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[144px]"
                                   >
                                     Optimum Factor (P)
                                   </th>
@@ -1788,22 +1788,22 @@ function RankingPage() {
                               {shouldInsertRiskAssessment && (
                                 <>
                                   {/* Risk Assessment & Optimization section individual column headers - 5 columns */}
-                                  {/* Column widths: Col1=120px, Col2=150px, Col3=120px, Col4=100px, Col5=120px */}
-                                  {/* Col 1: Severity (S) */}
+                                  {/* Column widths: Col1=180px (Recommendation), Col2=120px (Severity), Col3=144px (Optimum Factor), Col4=100px, Col5=120px */}
+                                  {/* Col 1: Recommendation */}
+                                  <th 
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[180px]"
+                                  >
+                                    Recommendation
+                                  </th>
+                                  {/* Col 2: Severity (S) */}
                                   <th 
                                     className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
                                   >
                                     Severity (S)
                                   </th>
-                                  {/* Col 2: Recommendation */}
-                                  <th 
-                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[150px]"
-                                  >
-                                    Recommendation
-                                  </th>
                                   {/* Col 3: Optimum Factor (P) */}
                                   <th 
-                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[120px]"
+                                    className="px-3 py-3 text-center text-xs font-medium text-gray-700 uppercase border-r border-gray-300 w-[144px]"
                                   >
                                     Optimum Factor (P)
                                   </th>
@@ -1912,7 +1912,20 @@ function RankingPage() {
                                      return (
                                        <>
                                          {/* Risk Assessment & Optimization section cells - 5 columns */}
-                                         {/* Col 1: Severity (S) */}
+                                         {/* Col 1: Recommendation */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[180px]"
+                                         >
+                                           <textarea
+                                             value={recommendations[alt] || ''}
+                                             onChange={(e) => handleRecommendationChange(alt, e.target.value)}
+                                             onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
+                                             className="w-full min-w-[150px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                             placeholder="Enter recommendation..."
+                                             rows={2}
+                                           />
+                                         </td>
+                                         {/* Col 2: Severity (S) */}
                                          <td 
                                            className="px-3 py-3 border-b border-r bg-white w-[120px]"
                                          >
@@ -1927,29 +1940,16 @@ function RankingPage() {
                                              placeholder="1-10"
                                            />
                                          </td>
-                                         {/* Col 2: Recommendation */}
-                                         <td 
-                                           className="px-3 py-3 border-b border-r bg-white w-[150px]"
-                                         >
-                                           <textarea
-                                             value={recommendations[alt] || ''}
-                                             onChange={(e) => handleRecommendationChange(alt, e.target.value)}
-                                             onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
-                                             className="w-full min-w-[120px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                             placeholder="Enter recommendation..."
-                                             rows={2}
-                                           />
-                                         </td>
                                          {/* Col 3: Optimum Factor (P) */}
                                          <td 
-                                           className="px-3 py-3 border-b border-r bg-white w-[120px]"
+                                           className="px-3 py-3 border-b border-r bg-white w-[144px]"
                                          >
                                            <input
                                              type="number"
                                              step="0.1"
                                              value={optimumWeights[alt] || ''}
                                              onChange={(e) => handleOptimumWeightChange(alt, e.target.value)}
-                                             className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             className="w-full min-w-[90px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                              placeholder="Factor"
                                            />
                                          </td>
@@ -2001,7 +2001,20 @@ function RankingPage() {
                                      return (
                                        <>
                                          {/* Risk Assessment & Optimization section cells - 5 columns */}
-                                         {/* Col 1: Severity (S) */}
+                                         {/* Col 1: Recommendation */}
+                                         <td 
+                                           className="px-3 py-3 border-b border-r bg-white w-[180px]"
+                                         >
+                                           <textarea
+                                             value={recommendations[alt] || ''}
+                                             onChange={(e) => handleRecommendationChange(alt, e.target.value)}
+                                             onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
+                                             className="w-full min-w-[150px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                             placeholder="Enter recommendation..."
+                                             rows={2}
+                                           />
+                                         </td>
+                                         {/* Col 2: Severity (S) */}
                                          <td 
                                            className="px-3 py-3 border-b border-r bg-white w-[120px]"
                                          >
@@ -2016,29 +2029,16 @@ function RankingPage() {
                                              placeholder="1-10"
                                            />
                                          </td>
-                                         {/* Col 2: Recommendation */}
-                                         <td 
-                                           className="px-3 py-3 border-b border-r bg-white w-[150px]"
-                                         >
-                                           <textarea
-                                             value={recommendations[alt] || ''}
-                                             onChange={(e) => handleRecommendationChange(alt, e.target.value)}
-                                             onBlur={(e) => handleRecommendationBlur(alt, e.target.value)}
-                                             className="w-full min-w-[120px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                             placeholder="Enter recommendation..."
-                                             rows={2}
-                                           />
-                                         </td>
                                          {/* Col 3: Optimum Factor (P) */}
                                          <td 
-                                           className="px-3 py-3 border-b border-r bg-white w-[120px]"
+                                           className="px-3 py-3 border-b border-r bg-white w-[144px]"
                                          >
                                            <input
                                              type="number"
                                              step="0.1"
                                              value={optimumWeights[alt] || ''}
                                              onChange={(e) => handleOptimumWeightChange(alt, e.target.value)}
-                                             className="w-full min-w-[70px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             className="w-full min-w-[90px] min-h-[35px] px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                              placeholder="Factor"
                                            />
                                          </td>

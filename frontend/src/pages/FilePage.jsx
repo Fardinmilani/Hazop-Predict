@@ -323,7 +323,11 @@ function FilePage() {
                 projectData.alternativesScores || {},
                 projectData.rankingResult || null,
                 projectData.rankingColumns || projectData.columns || [],
-                projectData.groups || []
+                projectData.groups || [],
+                projectData.severityValues || {},
+                projectData.recommendations || {},
+                projectData.optimumWeights || {},
+                projectData.criteriaDirections || {}
               )
               // Dispatch event to load in RankingPage
               window.dispatchEvent(new CustomEvent('ranking-open', { detail: {
@@ -331,7 +335,11 @@ function FilePage() {
                 alternativesScores: projectData.alternativesScores || {},
                 rankingResult: projectData.rankingResult || null,
                 columns: projectData.rankingColumns || projectData.columns || [],
-                groups: projectData.groups || []
+                groups: projectData.groups || [],
+                severityValues: projectData.severityValues || {},
+                recommendations: projectData.recommendations || {},
+                optimumWeights: projectData.optimumWeights || {},
+                criteriaDirections: projectData.criteriaDirections || {}
               } }))
             }
             
@@ -353,7 +361,11 @@ function FilePage() {
               rankingData.alternativesScores || {},
               rankingData.rankingResult || null,
               rankingData.columns || [],
-              rankingData.groups || []
+              rankingData.groups || [],
+              rankingData.severityValues || {},
+              rankingData.recommendations || {},
+              rankingData.optimumWeights || {},
+              rankingData.criteriaDirections || {}
             )
             // Then dispatch event to load in RankingPage
             window.dispatchEvent(new CustomEvent('ranking-open', { detail: rankingData }))
@@ -521,18 +533,22 @@ function FilePage() {
             console.error('Error fetching ranking data:', err)
           }
 
-          // Combine project and ranking data
-          // Preserve project columns in 'columns' and ranking columns in 'rankingColumns'
-          const combinedData = {
-            ...dataToSave.project,
-            ...(rankingData && {
-              criteriaWeights: rankingData.criteriaWeights || {},
-              alternativesScores: rankingData.alternativesScores || {},
-              rankingResult: rankingData.rankingResult || null,
-              rankingColumns: rankingData.columns || [], // Store ranking columns separately
-              groups: rankingData.groups || [] // Store groups separately
-            })
-          }
+            // Combine project and ranking data
+            // Preserve project columns in 'columns' and ranking columns in 'rankingColumns'
+            const combinedData = {
+              ...dataToSave.project,
+              ...(rankingData && {
+                criteriaWeights: rankingData.criteriaWeights || {},
+                alternativesScores: rankingData.alternativesScores || {},
+                rankingResult: rankingData.rankingResult || null,
+                rankingColumns: rankingData.columns || [], // Store ranking columns separately
+                groups: rankingData.groups || [], // Store groups separately
+                severityValues: rankingData.severityValues || {},
+                recommendations: rankingData.recommendations || {},
+                optimumWeights: rankingData.optimumWeights || {},
+                criteriaDirections: rankingData.criteriaDirections || {}
+              })
+            }
 
           if ('showSaveFilePicker' in window) {
             try {
@@ -608,7 +624,11 @@ function FilePage() {
                 alternativesScores: rankingData.alternativesScores || {},
                 rankingResult: rankingData.rankingResult || null,
                 rankingColumns: rankingData.columns || [], // Store ranking columns separately
-                groups: rankingData.groups || [] // Store groups separately
+                groups: rankingData.groups || [], // Store groups separately
+                severityValues: rankingData.severityValues || {},
+                recommendations: rankingData.recommendations || {},
+                optimumWeights: rankingData.optimumWeights || {},
+                criteriaDirections: rankingData.criteriaDirections || {}
               })
             }
 
