@@ -19,20 +19,21 @@ function ProjectPage() {
   const [columnToAddToLibrary, setColumnToAddToLibrary] = useState(null)
   const [addToLibraryMode, setAddToLibraryMode] = useState(null) // 'replace' or 'merge'
 
-  // Required built-in columns
-  const REQUIRED_COLUMNS = ['S', 'W', 'likelihood']
+  // Risk assessment columns that can be added as a pack
+  const RISK_ASSESSMENT_PACK = ['S', 'W', 'likelihood']
 
-  // Normalize project data: ensure required columns exist and compute likelihood
+  // Reorder columns to ensure risk assessment columns are always at the end
+  const reorderColumns = (columns) => {
+    const riskColumns = columns.filter(col => RISK_ASSESSMENT_PACK.includes(col))
+    const otherColumns = columns.filter(col => !RISK_ASSESSMENT_PACK.includes(col))
+    return [...otherColumns, ...riskColumns]
+  }
+
+  // Normalize project data: ensure all rows have keys for all columns and compute likelihood if S and W exist
   const normalizeProject = (rows, columns) => {
-    // Ensure required columns are in the columns array
-    const normalizedColumns = [...columns]
-    REQUIRED_COLUMNS.forEach(col => {
-      if (!normalizedColumns.includes(col)) {
-        normalizedColumns.push(col)
-      }
-    })
+    const normalizedColumns = reorderColumns([...columns])
 
-    // Ensure all rows have keys for all columns and compute likelihood
+    // Ensure all rows have keys for all columns
     const normalizedRows = rows.map(row => {
       const normalizedRow = { ...row }
       normalizedColumns.forEach(col => {
@@ -40,8 +41,10 @@ function ProjectPage() {
           normalizedRow[col] = ''
         }
       })
-      // Compute likelihood from S and W
-      normalizedRow.likelihood = getLikelihoodFromSW(normalizedRow.S, normalizedRow.W)
+      // Compute likelihood from S and W if both columns exist
+      if (normalizedColumns.includes('S') && normalizedColumns.includes('W')) {
+        normalizedRow.likelihood = getLikelihoodFromSW(normalizedRow.S, normalizedRow.W)
+      }
       return normalizedRow
     })
 
@@ -235,8 +238,8 @@ function ProjectPage() {
       newRows[rowIndex].rowNo = rowIndex + 1
     }
     
-    // If S or W changed, recompute likelihood for this row
-    if (columnName === 'S' || columnName === 'W') {
+    // If S or W changed and both columns exist, recompute likelihood for this row
+    if ((columnName === 'S' || columnName === 'W') && columns.includes('S') && columns.includes('W')) {
       newRows[rowIndex].likelihood = getLikelihoodFromSW(
         newRows[rowIndex].S || '',
         newRows[rowIndex].W || ''
@@ -270,8 +273,10 @@ function ProjectPage() {
     columns.forEach(col => {
       newRow[col] = ''
     })
-    // Ensure likelihood is computed (will be empty since S and W are empty)
-    newRow.likelihood = getLikelihoodFromSW(newRow.S || '', newRow.W || '')
+    // Compute likelihood only if both S and W columns exist
+    if (columns.includes('S') && columns.includes('W')) {
+      newRow.likelihood = getLikelihoodFromSW(newRow.S || '', newRow.W || '')
+    }
     const newRows = [...rows, newRow]
     setRows(newRows)
     updateProject(newRows, columns)
@@ -383,7 +388,7 @@ function ProjectPage() {
       return
     }
     
-    const newColumns = [...columns, columnName]
+    const newColumns = reorderColumns([...columns, columnName])
     setColumns(newColumns)
     
     // Add empty value for this column in all rows
@@ -392,10 +397,12 @@ function ProjectPage() {
       [columnName]: ''
     }))
     
-    // Recompute likelihood for all rows after adding column
+    // Recompute likelihood for all rows after adding column (only if both S and W exist)
     const normalizedRows = newRows.map(row => ({
       ...row,
-      likelihood: getLikelihoodFromSW(row.S || '', row.W || '')
+      ...(newColumns.includes('S') && newColumns.includes('W') ? {
+        likelihood: getLikelihoodFromSW(row.S || '', row.W || '')
+      } : {})
     }))
     
     setRows(normalizedRows)
@@ -409,6 +416,42 @@ function ProjectPage() {
     return library.headers
       .map(h => h.name)
       .filter(name => !columns.includes(name))
+  }
+
+  const handleSelectRiskAssessmentPack = () => {
+    const packColumns = RISK_ASSESSMENT_PACK.filter(col => !columns.includes(col))
+
+    if (packColumns.length === 0) {
+      setMessage({ type: 'error', text: 'All risk assessment columns are already added' })
+      setShowColumnModal(false)
+      return
+    }
+
+    // Add pack columns and reorder to ensure they're at the end
+    const newColumns = reorderColumns([...columns, ...packColumns])
+
+    // Add empty value for these columns in all rows
+    const newRows = rows.map(row => {
+      const newRow = { ...row }
+      packColumns.forEach(col => {
+        newRow[col] = ''
+      })
+      // Compute likelihood for all rows since we now have S and W
+      if (newColumns.includes('S') && newColumns.includes('W')) {
+        newRow.likelihood = getLikelihoodFromSW(newRow.S || '', newRow.W || '')
+      }
+      return newRow
+    })
+
+    setColumns(newColumns)
+    setRows(newRows)
+    updateProject(newRows, newColumns)
+    setShowColumnModal(false)
+
+    const addedCount = packColumns.length
+    const columnText = addedCount === 1 ? 'column' : 'columns'
+    setMessage({ type: 'success', text: `Risk Assessment Pack added successfully (${addedCount} ${columnText})` })
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
 
   const checkColumnHasData = (columnName) => {
@@ -428,17 +471,8 @@ function ProjectPage() {
 
   const handleDeleteColumnConfirm = async () => {
     if (!columnToDelete) return
-    
-    // Prevent deletion of required columns
-    if (REQUIRED_COLUMNS.includes(columnToDelete)) {
-      setMessage({ type: 'error', text: `Column "${columnToDelete}" is a required column and cannot be deleted` })
-      setShowDeleteColumnModal(false)
-      setColumnToDelete(null)
-      setColumnHasData(false)
-      return
-    }
-    
-    const newColumns = columns.filter(col => col !== columnToDelete)
+
+    const newColumns = reorderColumns(columns.filter(col => col !== columnToDelete))
     setColumns(newColumns)
     
     // Remove column data from all rows
@@ -617,45 +651,77 @@ function ProjectPage() {
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Select Column from Library</h3>
             
-            {availableColumns.length === 0 ? (
+            {availableColumns.length === 0 && RISK_ASSESSMENT_PACK.every(col => columns.includes(col)) ? (
               <div className="py-4">
                 <p className="text-gray-500 mb-4">All available columns from Library have been added.</p>
-                <button
-                  onClick={() => setShowColumnModal(false)}
-                  className="w-full px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                >
-                  Close
-                </button>
               </div>
             ) : (
               <>
-                <div className="mb-4 max-h-64 overflow-y-auto">
-                  {availableColumns.map((colName) => {
-                    const header = library.headers.find(h => h.name === colName)
-                    return (
-                      <button
-                        key={colName}
-                        onClick={() => handleSelectColumn(colName)}
-                        className="w-full text-left px-4 py-3 mb-2 border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-500 transition-colors"
-                      >
-                        <div className="font-medium text-gray-800">{colName}</div>
-                        {header && header.options.length > 0 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {header.options.length} option(s) available
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-                <button
-                  onClick={() => setShowColumnModal(false)}
-                  className="w-full px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                >
-                  Cancel
-                </button>
+                {/* Risk Assessment Pack Section */}
+                {RISK_ASSESSMENT_PACK.some(col => !columns.includes(col)) && (
+                  <div className="mb-6 p-4 border-2 border-purple-200 rounded-lg bg-purple-50">
+                    <h4 className="text-lg font-semibold text-purple-800 mb-2">Risk Assessment Pack</h4>
+                    <p className="text-sm text-purple-700 mb-3">
+                      Add Severity (S), Probability (W), and Likelihood columns together for comprehensive risk assessment.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {RISK_ASSESSMENT_PACK.map(col => (
+                        <span
+                          key={col}
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            columns.includes(col)
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-purple-100 text-purple-800'
+                          }`}
+                        >
+                          {col}
+                          {columns.includes(col) && ' ✓'}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      onClick={handleSelectRiskAssessmentPack}
+                      className="w-full px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
+                    >
+                      Add Risk Assessment Pack
+                    </button>
+                  </div>
+                )}
+
+                {/* Individual Columns Section */}
+                {availableColumns.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-lg font-semibold text-gray-800 mb-2">Individual Columns</h4>
+                    <div className="max-h-64 overflow-y-auto">
+                      {availableColumns.map((colName) => {
+                        const header = library.headers.find(h => h.name === colName)
+                        return (
+                          <button
+                            key={colName}
+                            onClick={() => handleSelectColumn(colName)}
+                            className="w-full text-left px-4 py-3 mb-2 border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-500 transition-colors"
+                          >
+                            <div className="font-medium text-gray-800">{colName}</div>
+                            {header && header.options.length > 0 && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {header.options.length} option(s) available
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </>
             )}
+
+            <button
+              onClick={() => setShowColumnModal(false)}
+              className="w-full px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

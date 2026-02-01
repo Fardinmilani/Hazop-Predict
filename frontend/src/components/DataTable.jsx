@@ -3,8 +3,6 @@ import { Plus } from 'lucide-react'
 import { S_OPTIONS, W_OPTIONS } from '../utils/riskMatrix'
 
 function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDeleteColumn, library, temporaryColumnMetadata = {}, onAddToLibrary }) {
-  // Built-in columns that should not show "Add to Library" button
-  const BUILT_IN_COLUMNS = ['S', 'W', 'likelihood']
 
   const getOptionsForColumn = (columnName) => {
     // Handle built-in columns S and W
@@ -99,14 +97,13 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
             </th>
             {columns.map((col, idx) => {
               const isInLibrary = isColumnInLibrary(col)
-              const isBuiltIn = BUILT_IN_COLUMNS.includes(col)
               const minWidthClass = getColumnMinWidth(col)
               return (
                 <th key={idx} className={`px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase border-b ${minWidthClass}`}>
                   <div className="flex items-center justify-between">
                     <span className="whitespace-nowrap">{col}</span>
                     <div className="flex items-center space-x-1 ml-2">
-                      {!isInLibrary && !isBuiltIn && onAddToLibrary && (
+                      {!isInLibrary && onAddToLibrary && (
                         <button
                           onClick={() => onAddToLibrary(col)}
                           className="text-green-500 hover:text-green-700 text-xs px-2 py-1 border border-green-300 rounded flex items-center space-x-1 flex-shrink-0"
@@ -116,7 +113,7 @@ function DataTable({ columns, rows, onCellChange, onAddRow, onDeleteRow, onDelet
                           <span>Add</span>
                         </button>
                       )}
-                      {onDeleteColumn && !isBuiltIn && (
+                      {onDeleteColumn && (
                         <button
                           onClick={() => onDeleteColumn(col)}
                           className="text-red-500 hover:text-red-700 text-sm font-bold flex-shrink-0"
