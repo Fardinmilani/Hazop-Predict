@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from config import get_data_dir
 from utils.report_generator import (
     generate_statistics, generate_correlation_heatmap,
     generate_bar_chart, generate_scatter_plot
@@ -213,7 +214,7 @@ def export_excel():
         output.seek(0)
         
         # Save to data directory temporarily for download
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / filename
         filepath.parent.mkdir(exist_ok=True)
         with open(filepath, 'wb') as f:
@@ -233,7 +234,7 @@ def export_excel():
 def download_excel():
     """Download Excel file"""
     filename = request.args.get('filename', 'report.xlsx')
-    DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+    DATA_DIR = get_data_dir()
     filepath = DATA_DIR / filename
     
     if not filepath.exists():
@@ -395,7 +396,7 @@ def export_pdf():
         buffer.seek(0)
         
         # Save PDF temporarily for download
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / filename
         filepath.parent.mkdir(exist_ok=True)
         with open(filepath, 'wb') as f:
@@ -415,7 +416,7 @@ def export_pdf():
 def download_pdf():
     """Download PDF file"""
     filename = request.args.get('filename', 'report.pdf')
-    DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+    DATA_DIR = get_data_dir()
     filepath = DATA_DIR / filename
     
     if not filepath.exists():

@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from utils.file_manager import save_json, load_json
+from config import get_data_dir
 
 library_bp = Blueprint('library', __name__)
 LIBRARY_FILE = 'library.json'
@@ -45,7 +46,7 @@ def save_library():
         # If headers are empty, delete the file
         if not library_data.get('headers') or len(library_data.get('headers', [])) == 0:
             from pathlib import Path
-            DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+            DATA_DIR = get_data_dir()
             filepath = DATA_DIR / LIBRARY_FILE
             if filepath.exists():
                 filepath.unlink()

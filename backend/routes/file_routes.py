@@ -12,15 +12,14 @@ from utils.file_manager import (
     save_json, load_json, save_csv, load_csv,
     save_excel, load_excel, list_files
 )
+from config import get_data_dir
 import os
 import pandas as pd
 import io
 from openpyxl.styles import Alignment
 
 file_bp = Blueprint('file', __name__)
-
-# Data directory path
-DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+DATA_DIR = get_data_dir()
 
 @file_bp.route('/new', methods=['POST'])
 def new_file():
@@ -57,7 +56,7 @@ def open_file():
             # Handle special files (project.xlsx and library.json)
             if filename == 'project.xlsx':
                 from pathlib import Path
-                DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+                DATA_DIR = get_data_dir()
                 filepath = DATA_DIR / 'project.xlsx'
                 
                 if not filepath.exists():
@@ -805,7 +804,7 @@ def save():
             # If saving project.xlsx, check if we should preserve ranking data
             if filename == 'project.xlsx':
                 from pathlib import Path
-                DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+                DATA_DIR = get_data_dir()
                 filepath = DATA_DIR / 'project.xlsx'
                 
                 # Try to get ranking data from file_data first, then from existing file

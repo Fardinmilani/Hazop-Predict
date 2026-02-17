@@ -31,7 +31,8 @@ app.register_blueprint(ranking_bp, url_prefix='/api/ranking')
 app.register_blueprint(report_bp, url_prefix='/api/report')
 
 # Create data directory if it doesn't exist
-DATA_DIR = Path(__file__).parent.parent / 'data'
+from config import get_data_dir
+DATA_DIR = get_data_dir()
 os.makedirs(DATA_DIR, exist_ok=True)
 
 @app.route('/api/health', methods=['GET'])

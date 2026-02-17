@@ -1,0 +1,3 @@
+# Dependencies for building EXE (install: pip install -r requirements-build.txt)
+pyinstaller>=6.0.0
+pywebview>=4.0.0

@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from utils.file_manager import load_excel, save_excel
+from config import get_data_dir
 import pandas as pd
 from openpyxl.styles import Alignment
 
@@ -18,7 +19,7 @@ PROJECT_FILE = 'project.xlsx'
 def save_project_with_ranking(rows, columns=None, filename=PROJECT_FILE):
     """Save project data while preserving ranking sheets and column order"""
     from pathlib import Path
-    DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+    DATA_DIR = get_data_dir()
     filepath = DATA_DIR / filename
     
     # Load existing ranking data and column order if file exists
@@ -291,7 +292,7 @@ def save_project_with_ranking(rows, columns=None, filename=PROJECT_FILE):
 def get_project():
     """Get current project data - preserve column order from Excel"""
     from pathlib import Path
-    DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+    DATA_DIR = get_data_dir()
     filepath = DATA_DIR / PROJECT_FILE
     
     if not filepath.exists():
@@ -396,7 +397,7 @@ def update_project():
     # If columns not provided, get from existing Excel file to preserve order
     if not columns and rows:
         from pathlib import Path
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / PROJECT_FILE
         if filepath.exists():
             try:
@@ -430,7 +431,7 @@ def update_project():
         # If rows and columns are empty, delete the file
         if len(rows) == 0 and len(columns) == 0:
             from pathlib import Path
-            DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+            DATA_DIR = get_data_dir()
             filepath = DATA_DIR / PROJECT_FILE
             if filepath.exists():
                 try:
@@ -481,7 +482,7 @@ def update_project_cell():
 
         # Load project data from correct sheet
         from pathlib import Path
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / PROJECT_FILE
         
         if filepath.exists():
@@ -601,7 +602,7 @@ def delete_project():
     
     try:
         from pathlib import Path
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / PROJECT_FILE
         
         if not filepath.exists():

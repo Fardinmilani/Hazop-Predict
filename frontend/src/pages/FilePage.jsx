@@ -139,7 +139,10 @@ function FilePage() {
                         (rankingData.columns && rankingData.columns.length > 0)
       }
       
-      // Show project.xlsx if it has project data OR ranking data
+      // Show project.xlsx if it has project data OR ranking data.
+      // IMPORTANT: Do NOT auto-remove it when empty – if the user has just
+      // created a new empty project from the File page we still want to
+      // keep it in the Active Files list until they explicitly remove it.
       if (hasProjectData || hasRankingData) {
         const projectFile = normalizeFileEntry({
           name: 'project.xlsx',
@@ -156,9 +159,6 @@ function FilePage() {
             ...projectFile
           }
         }
-      } else {
-        // Remove from list if no data
-        files = files.filter(f => !isProjectFile(f))
       }
 
       // Check if library.json exists and has data
@@ -181,10 +181,9 @@ function FilePage() {
               ...libraryFile
             }
           }
-        } else {
-          // Remove from list if no data
-          files = files.filter(f => !isLibraryFile(f))
         }
+        // If library has no headers we keep any existing active file entry;
+        // it will only be removed when the user explicitly removes it.
       } else {
         // Remove from list if error
         files = files.filter(f => !isLibraryFile(f))

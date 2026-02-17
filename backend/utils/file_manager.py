@@ -8,8 +8,8 @@ import pandas as pd
 import os
 from pathlib import Path
 
-# Use absolute path relative to project root
-DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+from config import get_data_dir
+DATA_DIR = get_data_dir()
 
 def ensure_data_dir():
     """Ensure data directory exists"""

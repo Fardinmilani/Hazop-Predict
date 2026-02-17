@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from utils.ahp import ahp_ranking, calculate_consistency_ratio, create_pairwise_matrix
 from utils.file_manager import load_excel, save_excel
+from config import get_data_dir
 import pandas as pd
 from openpyxl.styles import Alignment
 
@@ -25,7 +26,7 @@ _file_lock = threading.Lock()
 def migrate_ranking_data():
     """Migrate ranking data from ranking.xlsx to project.xlsx if needed"""
     from pathlib import Path
-    DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+    DATA_DIR = get_data_dir()
     old_filepath = DATA_DIR / OLD_RANKING_FILE
     new_filepath = DATA_DIR / PROJECT_FILE
     
@@ -190,7 +191,7 @@ def get_ranking():
         migrate_ranking_data()
         
         from pathlib import Path
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / PROJECT_FILE
         
         # Initialize default structure
@@ -410,7 +411,7 @@ def delete_ranking():
     """Delete ranking data from project.xlsx (clear ranking sheets, preserve project data)"""
     try:
         from pathlib import Path
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         filepath = DATA_DIR / PROJECT_FILE
         
         # Load project data if file exists
@@ -483,7 +484,7 @@ def update_ranking_cell():
         
         print(f"DEBUG: update_ranking_cell called with type={cell_type}, alternative={alternative}, criteria={criteria}, value={value}")
 
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         DATA_DIR.mkdir(exist_ok=True)
         filepath = DATA_DIR / PROJECT_FILE
 
@@ -1138,7 +1139,7 @@ def update_ranking():
         print(f"  - groups: {ranking_groups}")
         print(f"  - criteria_weights: {criteria_weights}")
         
-        DATA_DIR = Path(__file__).parent.parent.parent / 'data'
+        DATA_DIR = get_data_dir()
         DATA_DIR.mkdir(exist_ok=True)
         filepath = DATA_DIR / PROJECT_FILE
         

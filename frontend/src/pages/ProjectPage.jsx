@@ -65,7 +65,16 @@ function ProjectPage() {
     // Listen for project events from FilePage
     const handleNew = async (e) => {
       const rows = e.detail.rows || []
-      const cols = (e.detail.columns || []).filter(col => col !== 'rowNo')
+      let cols = (e.detail.columns || []).filter(col => col !== 'rowNo')
+
+      // When creating a brand new project from the File page, the backend
+      // returns empty rows/columns. In that case we want to initialise the
+      // project with the current Library headers so the user immediately
+      // gets a usable table structure instead of an empty grid.
+      if (cols.length === 0 && library.headers && library.headers.length > 0) {
+        cols = library.headers.map((h) => h.name)
+      }
+
       let loadedRows = rows.map((row, index) => ({
         ...row,
         rowNo: row.rowNo || index + 1
