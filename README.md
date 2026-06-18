@@ -1,164 +1,167 @@
 # HAZOP Analysis Tool
 
-A full-stack web application for Hazard and Operability (HAZOP) analysis with machine learning capabilities and ranking algorithms.
+A full-stack web application for **Hazard and Operability (HAZOP)** analysis — combining a dynamic project workspace, machine learning risk prediction, AHP-based ranking, and automated report generation.
+
+![Project Workspace](screenshots/project.png)
+
+---
 
 ## Features
 
-- **File Management**: Create, open, save, and export projects in JSON, CSV, or Excel formats
-- **Library Management**: Define custom headers and options for data entry
-- **Project Workspace**: Dynamic data table with dropdown cells based on library definitions
-- **Machine Learning**: Train and evaluate multiple ML models (Linear Regression, Decision Tree, Random Forest, SVM)
-- **Ranking**: AHP (Analytic Hierarchy Process) for ranking alternatives
-- **Reports**: Statistical summaries and data visualizations with export capabilities
+| Module | Description |
+|---|---|
+| **File management** | Open/save projects as `.xlsx`, `.csv`, or `.json` |
+| **Library builder** | Define custom headers and dropdown option sets |
+| **Project workspace** | Dynamic data table with built-in S/W risk matrix and auto-calculated likelihood |
+| **ML methodology** | Train and compare 9 models (Random Forest, XGBoost, CatBoost, SVM, KNN, …) for both regression and classification |
+| **AHP ranking** | RCA fault-tree table with group presets, criteria weighting, and Final Risk Score |
+| **Reports** | Statistical summaries, distribution fitting, correlation heatmaps, export to PDF and Excel |
 
-## Tech Stack
+---
 
-### Backend
-- Python Flask
-- pandas, numpy, scikit-learn
-- openpyxl (Excel support)
-- matplotlib, seaborn (visualizations)
-- reportlab (PDF generation)
+## Screenshots
 
-### Frontend
-- React + Vite
-- TailwindCSS
-- React Router
-- Axios
-- Lucide React (icons)
+<table>
+  <tr>
+    <td><img src="screenshots/project.png" alt="Project workspace"/><br/><sub>Project workspace</sub></td>
+    <td><img src="screenshots/methodology.png" alt="ML methodology"/><br/><sub>ML methodology</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/ranking.png" alt="AHP ranking"/><br/><sub>AHP ranking table</sub></td>
+    <td><img src="screenshots/report.png" alt="Reports"/><br/><sub>Reports & analytics</sub></td>
+  </tr>
+</table>
 
-## Project Structure
+---
+
+## Tech stack
+
+**Backend** — Python 3.8+, Flask, Flask-CORS, pandas, numpy, scikit-learn, XGBoost, CatBoost, openpyxl, reportlab, matplotlib, seaborn
+
+**Frontend** — React 18, Vite, TailwindCSS, Recharts, React Router, Axios, Lucide React
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- Python 3.8+
+- Node.js 16+
+
+### 1. Install backend dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Install frontend dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 3. Run the app
+
+Open **two terminals**:
+
+```bash
+# Terminal 1 — backend (http://localhost:5000)
+cd backend
+python app.py
+
+# Terminal 2 — frontend (http://localhost:3000)
+cd frontend
+npm run dev
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+
+> **Windows shortcut:** double-click `run_backend.bat` and `run_frontend.bat`.
+
+---
+
+## Typical workflow
+
+```
+Library → Project → ML Methodology → Ranking → Reports
+```
+
+1. **Library** — define headers (e.g. "Deviation", "Cause") and their dropdown options.
+2. **Project** — create a project, add columns from the library, fill rows. S/W risk matrix calculates likelihood automatically.
+3. **Methodology** — select feature and target columns, train ML models, compare metrics, make predictions.
+4. **Ranking** — add criteria groups (Design, Procurement, Operation…), enter scores and weights, calculate AHP ranking and Final Risk Score.
+5. **Reports** — generate statistics, visualizations, and export as PDF or Excel.
+
+---
+
+## Project structure
 
 ```
 hazop-app/
 ├── backend/
-│   ├── app.py                 # Flask main application
-│   ├── routes/                # API route handlers
+│   ├── app.py                  # Flask entry point
+│   ├── routes/                 # API route handlers
 │   │   ├── file_routes.py
 │   │   ├── library_routes.py
 │   │   ├── project_routes.py
 │   │   ├── methodology_routes.py
 │   │   ├── ranking_routes.py
 │   │   └── report_routes.py
-│   └── utils/                 # Utility modules
+│   └── utils/
 │       ├── file_manager.py
 │       ├── ml_models.py
 │       ├── ahp.py
 │       └── report_generator.py
 ├── frontend/
-│   ├── src/
-│   │   ├── pages/             # React page components
-│   │   ├── components/        # Reusable components
-│   │   └── utils/             # API utilities
-│   ├── package.json
-│   └── vite.config.js
-├── data/                      # Local data storage (created automatically)
+│   └── src/
+│       ├── pages/              # FilePage, LibraryPage, ProjectPage, …
+│       ├── components/         # DataTable, Navbar, Sidebar
+│       └── utils/              # api.js, riskMatrix.js
+├── data/                       # Auto-created; stores project.xlsx, library.json
 ├── requirements.txt
 └── README.md
 ```
 
-## Setup Instructions
+---
 
-### Prerequisites
-- Python 3.8+
-- Node.js 16+
-- npm or yarn
+## API overview
 
-### Backend Setup
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/file/open` | POST | Open a project file |
+| `/api/file/save` | POST | Save project as Excel |
+| `/api/library/get` | GET | Get library config |
+| `/api/project/update` | POST | Update project rows |
+| `/api/methodology/train` | POST | Train ML models |
+| `/api/ranking/update` | POST | Save ranking data |
+| `/api/ranking/ahp` | POST | Calculate AHP ranking |
+| `/api/report/statistics` | POST | Generate statistics |
+| `/api/report/export-pdf` | POST | Export report as PDF |
 
-1. Install Python dependencies:
-```bash
-pip install -r requirements.txt
-```
+Full API documentation is available in [`README_API.md`](README_API.md).
 
-2. Run the Flask server:
-```bash
-cd backend
-python app.py
-```
+---
 
-The backend will run on `http://localhost:5000`
+## Troubleshooting
 
-### Frontend Setup
+**Backend won't start** → check that port 5000 is free; verify all Python packages are installed with `pip list`.
 
-1. Install Node dependencies:
-```bash
-cd frontend
-npm install
-```
+**Frontend won't start** → check that port 3000 is free; try `npm cache clean --force && npm install`.
 
-2. Start the development server:
-```bash
-npm run dev
-```
+**CORS errors** → make sure the backend is running on port 5000 before loading the frontend.
 
-The frontend will run on `http://localhost:3000`
+**Data not saving** → verify the `data/` directory was created automatically at the project root.
 
-## Usage
-
-1. **Library Management**: First, define headers and their options in the Library page
-2. **Project Workspace**: Create a new project and add columns from the library
-3. **Data Entry**: Add rows and fill in data using dropdowns (based on library definitions)
-4. **Machine Learning**: Select features and target, train models, and make predictions
-5. **Ranking**: Set criteria weights and alternative scores, then calculate AHP ranking
-6. **Reports**: Generate statistics and visualizations, export as Excel or PDF
-
-## API Endpoints
-
-### File Operations
-- `POST /api/file/new` - Create new project
-- `POST /api/file/open` - Open existing project
-- `POST /api/file/save` - Save project
-- `POST /api/file/save-as` - Save project with new name
-- `GET /api/file/list` - List all project files
-
-### Library
-- `GET /api/library/get` - Get library configuration
-- `POST /api/library/save` - Save library
-- `POST /api/library/header/add` - Add new header
-- `PUT /api/library/header/update` - Update header
-- `DELETE /api/library/header/delete` - Delete header
-
-### Project
-- `GET /api/project/get` - Get project data
-- `POST /api/project/update` - Update project data
-- `POST /api/project/row/add` - Add row
-- `DELETE /api/project/row/delete` - Delete row
-
-### Methodology (ML)
-- `POST /api/methodology/train` - Train ML models
-- `POST /api/methodology/predict` - Make prediction
-
-### Ranking
-- `POST /api/ranking/ahp` - Perform AHP ranking
-- `POST /api/ranking/pairwise-matrix` - Create pairwise comparison matrix
-
-### Reports
-- `POST /api/report/statistics` - Get statistics
-- `POST /api/report/visualizations` - Generate visualization
-- `POST /api/report/export-excel` - Export as Excel
-- `POST /api/report/export-pdf` - Export as PDF
-
-## Data Storage
-
-All data is stored locally in the `data/` directory:
-- `library.json` - Library configuration
-- Project files - Saved as `.json`, `.csv`, or `.xlsx` based on user selection
-
-## Future Enhancements
-
-- TOPSIS and VIKOR ranking algorithms
-- Electron packaging for desktop app
-- Database integration (optional)
-- User authentication
-- Collaborative features
-- Advanced ML models
+---
 
 ## License
 
-MIT License
+MIT — see [LICENSE](LICENSE) for details.
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
+Pull requests are welcome. For major changes, please open an issue first to discuss what you'd like to change.
